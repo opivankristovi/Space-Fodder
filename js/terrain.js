@@ -69,6 +69,11 @@ class GameMap {
   get(tx, ty) { return tx < 0 || ty < 0 || tx >= this.w || ty >= this.h ? T_ROCK : this.tiles[ty * this.w + tx]; }
   tileAt(x, y) { return this.get(Math.floor(x / TILE), Math.floor(y / TILE)); }
   walkable(tx, ty) { const t = this.get(tx, ty); return t === T_GROUND || t === T_WATER; }
+  // 'foot' units wade water; 'hover' craft also cross lava and acid.
+  passable(tx, ty, mode) {
+    const t = this.get(tx, ty);
+    return t === T_GROUND || t === T_WATER || (mode === 'hover' && t === T_LAVA);
+  }
   blocksShotAt(x, y) { const t = this.tileAt(x, y); return t === T_ROCK || t === T_FLORA; }
 
   // ---------------------------------------------------------------- generation
@@ -196,11 +201,11 @@ class GameMap {
   }
 
   // Circle vs. blocking tiles.
-  circleBlocked(x, y, r) {
+  circleBlocked(x, y, r, mode) {
     const x0 = Math.floor((x - r) / TILE), x1 = Math.floor((x + r) / TILE);
     const y0 = Math.floor((y - r) / TILE), y1 = Math.floor((y + r) / TILE);
     for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) {
-      if (this.walkable(tx, ty)) continue;
+      if (mode ? this.passable(tx, ty, mode) : this.walkable(tx, ty)) continue;
       const cx = clamp(x, tx * TILE, tx * TILE + TILE), cy = clamp(y, ty * TILE, ty * TILE + TILE);
       if (dist2(x, y, cx, cy) < r * r) return true;
     }
@@ -218,23 +223,23 @@ class GameMap {
     return true;
   }
 
-  walkClear(x0, y0, x1, y1, r) {
+  walkClear(x0, y0, x1, y1, r, mode) {
     const d = dist(x0, y0, x1, y1);
     const steps = Math.ceil(d / 6);
     for (let i = 1; i <= steps; i++) {
       const t = i / steps;
-      if (this.circleBlocked(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, r)) return false;
+      if (this.circleBlocked(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, r, mode)) return false;
     }
     return true;
   }
 
-  nearestWalkable(tx, ty, maxR = 6) {
-    if (this.walkable(tx, ty)) return { tx, ty };
+  nearestWalkable(tx, ty, maxR = 6, mode = 'foot') {
+    if (this.passable(tx, ty, mode)) return { tx, ty };
     for (let r = 1; r <= maxR; r++) {
       let best = null, bd = 1e9;
       for (let oy = -r; oy <= r; oy++) for (let ox = -r; ox <= r; ox++) {
         if (Math.max(Math.abs(ox), Math.abs(oy)) !== r) continue;
-        if (!this.walkable(tx + ox, ty + oy)) continue;
+        if (!this.passable(tx + ox, ty + oy, mode)) continue;
         const dd = ox * ox + oy * oy;
         if (dd < bd) { bd = dd; best = { tx: tx + ox, ty: ty + oy }; }
       }
@@ -244,12 +249,13 @@ class GameMap {
   }
 
   // A* on the tile grid; returns smoothed world-space waypoints.
-  findPath(sx, sy, gx, gy, r = 7) {
+  findPath(sx, sy, gx, gy, r = 7, mode = 'foot') {
+    const ok = (x, y) => this.passable(x, y, mode);
     const { w } = this;
     const s = { tx: Math.floor(sx / TILE), ty: Math.floor(sy / TILE) };
-    let g = this.nearestWalkable(Math.floor(gx / TILE), Math.floor(gy / TILE));
+    const g = this.nearestWalkable(Math.floor(gx / TILE), Math.floor(gy / TILE), 6, mode);
     if (!g) return null;
-    const exactGoal = this.walkable(Math.floor(gx / TILE), Math.floor(gy / TILE));
+    const exactGoal = ok(Math.floor(gx / TILE), Math.floor(gy / TILE));
     const si = s.ty * w + s.tx, gi = g.ty * w + g.tx;
     const came = new Int32Array(this.w * this.h).fill(-1);
     const cost = new Float32Array(this.w * this.h).fill(Infinity);
@@ -264,10 +270,10 @@ class GameMap {
       for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
         if (!ox && !oy) continue;
         const nx = x + ox, ny = y + oy;
-        if (!this.walkable(nx, ny)) continue;
-        if (ox && oy && (!this.walkable(x + ox, y) || !this.walkable(x, y + oy))) continue;
+        if (!ok(nx, ny)) continue;
+        if (ox && oy && (!ok(x + ox, y) || !ok(x, y + oy))) continue;
         const ni = ny * w + nx;
-        const step = (ox && oy ? 1.414 : 1) * (this.get(nx, ny) === T_WATER ? 2.5 : 1);
+        const step = (ox && oy ? 1.414 : 1) * (mode === 'foot' && this.get(nx, ny) === T_WATER ? 2.5 : 1);
         const nc = cost[i] + step;
         if (nc < cost[ni]) { cost[ni] = nc; came[ni] = i; heap.push(ni, nc + H(ni)); }
       }
@@ -285,7 +291,7 @@ class GameMap {
       let far = k;
       for (let j = pts.length - 1; j > k; j--) {
         if (j - k > 12) continue;
-        if (this.walkClear(cx, cy, pts[j].x, pts[j].y, r)) { far = j; break; }
+        if (this.walkClear(cx, cy, pts[j].x, pts[j].y, r, mode)) { far = j; break; }
       }
       out.push(pts[far]);
       cx = pts[far].x; cy = pts[far].y;

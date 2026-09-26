@@ -2,6 +2,7 @@
 // One mission in progress: map, units, projectiles, objectives and rendering.
 
 const SPACING = 17;
+const TEAM_DEFS = [{ name: 'Alpha', color: '#ffb13a' }, { name: 'Bravo', color: '#5fd8ff' }, { name: 'Charlie', color: '#ff7ad0' }];
 
 class World {
   constructor(mission, squadData, opts = {}) {
@@ -18,12 +19,8 @@ class World {
     this.bullets = []; this.globs = []; this.throwables = [];
     this.pickups = []; this.barrels = []; this.lights = [];
     this.particles = new Particles(this);
-    this.trail = []; this.path = null; this.goal = null; this.pathT = 0;
-    this.marker = null;
-    this.grenades = mission.grenades || 0;
-    this.rockets = mission.rockets || 0;
-    this.special = this.grenades > 0 || this.rockets === 0 ? 'grenade' : 'rocket';
-    this.throwCd = 0;
+    this.teams = []; this.active = 0;
+    this.vehicles = []; this.wrecks = 0;
     this.stats = { kills: 0, nests: 0, rescued: 0, time: 0, shots: 0 };
     this.shake = 0;
     this.flowT = 0;
@@ -79,7 +76,11 @@ class World {
       if (map.circleBlocked(x, y, 7)) { x = s.x; y = s.y; }
       this.troopers.push(new Trooper(d, x, y));
     });
-    this.trail = [{ x: s.x, y: s.y + 60 }, { x: s.x, y: s.y + 30 }];
+    if (this.troopers.length) {
+      const T = this.makeTeam(this.troopers.slice(), M.grenades || 0, M.rockets || 0);
+      T.trail = [{ x: s.x, y: s.y + 60 }, { x: s.x, y: s.y + 30 }];
+      this.teams.push(T);
+    }
 
     // Extraction beacon
     if (M.objectives.includes('rescue') || M.objectives.includes('extract')) {
@@ -134,6 +135,14 @@ class World {
         }
       }
     }
+    // Vehicles, parked within reach of the drop zone
+    for (const [type, count] of Object.entries(M.vehicles || {})) {
+      for (let i = 0; i < count; i++) {
+        const c = pickCell(4, 110, 1, Math.max(14, maxD * 0.45));
+        placed.push(c);
+        this.vehicles.push(new Vehicle(type, c.x, c.y, rng.range(0, TAU)));
+      }
+    }
     // Crates
     for (const [kind, count] of Object.entries(M.crates || {})) {
       for (let i = 0; i < count; i++) {
@@ -160,10 +169,127 @@ class World {
     this.updateLeader();
   }
 
-  get leader() { return this.troopers[0] || null; }
+  // ------------------------------------------------------------ teams
+  makeTeam(members, grenades, rockets) {
+    const used = new Set(this.teams.map((t) => t.name));
+    const def = TEAM_DEFS.find((d) => !used.has(d.name)) || TEAM_DEFS[0];
+    const L = members[0];
+    const T = {
+      name: def.name, color: def.color, members, trail: L ? [{ x: L.x, y: L.y }] : [],
+      path: null, goal: null, marker: null, pathT: 0, throwCd: 0,
+      grenades, rockets, special: grenades > 0 || rockets === 0 ? 'grenade' : 'rocket',
+      vehicle: null, boardTarget: null,
+    };
+    for (const m of members) m.team = T;
+    return T;
+  }
+
+  get team() { return this.teams[this.active] || this.teams[0] || null; }
+  get leader() { const T = this.team; return T ? T.members[0] : null; }
+  get focus() { const T = this.team; return T ? T.vehicle || T.members[0] : null; }
+  get grenades() { return this.team ? this.team.grenades : 0; }
+  get rockets() { return this.team ? this.team.rockets : 0; }
+  get special() { return this.team ? this.team.special : 'grenade'; }
+  set special(v) { if (this.team) this.team.special = v; }
 
   updateLeader() {
-    this.troopers.forEach((t, i) => (t.leader = i === 0));
+    for (const T of this.teams) T.members.forEach((t, i) => (t.leader = i === 0));
+  }
+
+  removeTeam(T) {
+    const i = this.teams.indexOf(T);
+    if (i < 0) return;
+    const wasActive = this.team === T;
+    if (T.vehicle) { T.vehicle.team = null; T.vehicle.vel = 0; T.vehicle = null; }
+    this.teams.splice(i, 1);
+    if (i < this.active || this.active >= this.teams.length) this.active = Math.max(0, this.active - 1);
+    for (const c of this.colonists) if (c.team === T) c.team = this.teams[0] || null;
+    if (wasActive && this.teams.length) this.msg(`${this.team.name} team now has command.`, 'info');
+  }
+
+  splitTeam() {
+    const T = this.team;
+    if (!T) return;
+    if (T.vehicle) return this.msg('Get out of the vehicle before splitting the team.', 'warn');
+    if (this.teams.length >= TEAM_DEFS.length) return this.msg(`${TEAM_DEFS.length} teams is the limit. Join two teams first.`, 'warn');
+    let out = T.members.filter((m) => m.marked);
+    if (out.length >= T.members.length) out = out.filter((m) => m !== T.members[0]);
+    if (!out.length) out = T.members.slice(Math.ceil(T.members.length / 2));
+    if (!out.length) return this.msg('A team of one cannot split.', 'warn');
+    T.members = T.members.filter((m) => !out.includes(m));
+    const share = out.length / (out.length + T.members.length);
+    const g = Math.floor(T.grenades * share), r = Math.floor(T.rockets * share);
+    T.grenades -= g; T.rockets -= r;
+    const N = this.makeTeam(out, g, r);
+    for (const m of this.troopers) m.marked = false;
+    this.teams.push(N);
+    this.updateLeader();
+    if (T.goal && T.members[0]) T.path = this.map.findPath(T.members[0].x, T.members[0].y, T.goal.x, T.goal.y);
+    this.msg(`${N.name} team splits off with ${out.length}. Press C to switch teams.`, 'good');
+    Sfx.click();
+  }
+
+  joinTeams() {
+    const T = this.team;
+    if (!T || this.teams.length < 2) return;
+    if (T.vehicle) return this.msg('Get out of the vehicle to join another team.', 'warn');
+    let best = null, bd = 120 * 120;
+    for (const O of this.teams) {
+      if (O === T || O.vehicle) continue;
+      for (const m of O.members) for (const n of T.members) {
+        const d = dist2(m.x, m.y, n.x, n.y);
+        if (d < bd) { bd = d; best = O; }
+      }
+    }
+    if (!best) return this.msg('Walk up to another team on foot to join it.', 'warn');
+    T.members.push(...best.members);
+    for (const m of best.members) m.team = T;
+    T.grenades += best.grenades; T.rockets += best.rockets;
+    for (const c of this.colonists) if (c.team === best) c.team = T;
+    best.members = [];
+    const keep = T;
+    this.teams.splice(this.teams.indexOf(best), 1);
+    this.active = this.teams.indexOf(keep);
+    this.updateLeader();
+    this.msg(`${best.name} joins ${T.name}: ${T.members.length} troopers.`, 'good');
+    Sfx.click();
+  }
+
+  boardVehicle(T, v) {
+    T.boardTarget = null;
+    if (T.members.length > v.T.seats) {
+      this.msg(`The ${v.T.name} seats ${v.T.seats}. Mark troopers and split (X) to send a smaller team.`, 'warn');
+      return;
+    }
+    T.vehicle = v; v.team = T;
+    for (const m of T.members) { m.inVehicle = v; m.moving = false; m.marked = false; }
+    T.path = null; v.vel = 0; v.turret = v.face;
+    T.trail = [{ x: v.x, y: v.y }];
+    this.msg(`${T.name} team takes the ${v.T.name}. R to get out.`, 'good');
+    Sfx.engine(0.9);
+  }
+
+  exitVehicle(T, forced = false) {
+    const v = T.vehicle;
+    if (!v) return false;
+    const spots = [];
+    for (const rad of [v.r + 10, v.r + 24, v.r + 40]) {
+      for (let k = 0; k < 12; k++) {
+        const a = v.face + Math.PI + (k / 12) * TAU;
+        const x = v.x + Math.cos(a) * rad, y = v.y + Math.sin(a) * rad;
+        if (!this.map.circleBlocked(x, y, 7)) spots.push({ x, y });
+      }
+      if (spots.length >= T.members.length) break;
+    }
+    if (!spots.length && !forced) { this.msg('Nowhere to get out here. Drive to solid ground.', 'warn'); return false; }
+    T.members.forEach((m, i) => {
+      const p = spots[i % Math.max(1, spots.length)] || { x: v.x, y: v.y };
+      m.x = p.x; m.y = p.y; m.inVehicle = null; m.face = v.face;
+    });
+    T.vehicle = null; v.team = null; v.vel = 0;
+    T.path = null; T.trail = [{ x: T.members[0].x, y: T.members[0].y }];
+    if (!spots.length) for (const m of T.members.slice()) this.damageFriendly(m, 999, m.x, m.y);
+    return true;
   }
 
   msg(text, kind = 'info') { if (!this.demo) this.onMessage(text, kind); }
@@ -183,21 +309,22 @@ class World {
   }
 
   // ------------------------------------------------------------ helpers
-  moveEntity(e, dx, dy, r) {
+  moveEntity(e, dx, dy, r, mode) {
     const m = this.map;
     r = r ?? e.r;
     const steps = Math.max(1, Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)) / 5));
     const sx = dx / steps, sy = dy / steps;
     let moved = false;
     for (let i = 0; i < steps; i++) {
-      if (!m.circleBlocked(e.x + sx, e.y, r)) { e.x += sx; moved = true; }
-      if (!m.circleBlocked(e.x, e.y + sy, r)) { e.y += sy; moved = true; }
+      if (!m.circleBlocked(e.x + sx, e.y, r, mode)) { e.x += sx; moved = true; }
+      if (!m.circleBlocked(e.x, e.y + sy, r, mode)) { e.y += sy; moved = true; }
     }
     return moved;
   }
 
   targets() {
-    const out = this.troopers.slice();
+    const out = this.troopers.filter((t) => !t.inVehicle);
+    for (const v of this.vehicles) if (v.team) out.push(v);
     for (const c of this.colonists) if (c.state === 'following' || c.state === 'boarding') out.push(c);
     return out;
   }
@@ -206,8 +333,14 @@ class World {
     if (!this.deployed) return null;
     let best = null, bd = range * range;
     for (const t of this.troopers) {
+      if (t.inVehicle) continue;
       const d = dist2(x, y, t.x, t.y);
       if (d < bd && (!needLos || this.map.lineClear(x, y, t.x, t.y))) { bd = d; best = t; }
+    }
+    for (const v of this.vehicles) {
+      if (!v.team) continue;
+      const d = dist2(x, y, v.x, v.y);
+      if (d < bd && (!needLos || this.map.lineClear(x, y, v.x, v.y))) { bd = d; best = v; }
     }
     for (const c of this.colonists) {
       if (c.state !== 'following' && c.state !== 'boarding') continue;
@@ -238,7 +371,7 @@ class World {
     this.phaseT += dt;
     if (!this.demo && this.phase !== 'intro') this.stats.time += dt;
     this.shake = Math.max(0, this.shake - dt * 30);
-    this.throwCd -= dt;
+    for (const T of this.teams) T.throwCd -= dt;
     this.lights.length = 0;
 
     if (this.phase === 'intro' && this.phaseT > 1.45 && !this.deployed) {
@@ -257,7 +390,8 @@ class World {
       this.map.computeFlow(this.targets().map((t) => [Math.floor(t.x / TILE), Math.floor(t.y / TILE)]));
     }
 
-    if (this.deployed && this.phase !== 'outro-done') this.updateSquad(dt, ctl);
+    if (this.deployed) this.updateTeams(dt, ctl);
+    this.updateVehicles(dt);
     for (const a of this.aliens) a.update(dt, this);
     this.separateAliens();
     for (const n of this.nests) n.update(dt, this);
@@ -271,110 +405,108 @@ class World {
   }
 
   handleControls(dt, ctl) {
-    const L = this.leader;
-    if (!L) return;
-    if (ctl.move) {
-      const changed = !this.goal || dist2(this.goal.x, this.goal.y, ctl.move.x, ctl.move.y) > 16 * 16;
-      this.pathT -= dt;
-      if ((ctl.moveNew || (changed && this.pathT <= 0))) {
-        this.pathT = 0.12;
-        const p = this.map.findPath(L.x, L.y, ctl.move.x, ctl.move.y);
-        if (p) { this.path = p; this.goal = { x: ctl.move.x, y: ctl.move.y }; this.marker = { x: p[p.length - 1].x, y: p[p.length - 1].y, t: 0 }; }
-      }
-    }
-    if (ctl.switchSpecial) {
-      this.special = this.special === 'grenade' ? 'rocket' : 'grenade';
+    if (ctl.switchTeam && this.teams.length > 1) {
+      this.active = (this.active + 1) % this.teams.length;
+      this.msg(`${this.team.name} team selected`, 'info');
       Sfx.click();
     }
-    if (ctl.selectSpecial) this.special = ctl.selectSpecial;
-    if (ctl.throw && this.throwCd <= 0) {
-      if (this.special === 'grenade' && this.grenades <= 0 && this.rockets > 0) this.special = 'rocket';
-      else if (this.special === 'rocket' && this.rockets <= 0 && this.grenades > 0) this.special = 'grenade';
-      if (this.special === 'grenade' && this.grenades > 0) { this.throwGrenade(L, ctl.aimX, ctl.aimY); this.grenades--; this.throwCd = 0.55; }
-      else if (this.special === 'rocket' && this.rockets > 0) { this.fireRocket(L, ctl.aimX, ctl.aimY); this.rockets--; this.throwCd = 0.7; }
+    if (ctl.selectTeam != null && this.teams[ctl.selectTeam]) this.active = ctl.selectTeam;
+    if (ctl.split) this.splitTeam();
+    if (ctl.join) this.joinTeams();
+    const T = this.team;
+    if (!T) return;
+    if (ctl.exit) {
+      if (T.vehicle) { if (this.exitVehicle(T)) Sfx.click(); }
+      else this.msg('This team is on foot. Click a vehicle to climb in.', 'info');
+    }
+    const L = T.members[0];
+    const mover = T.vehicle || L;
+    if (ctl.move && mover) {
+      const changed = !T.goal || dist2(T.goal.x, T.goal.y, ctl.move.x, ctl.move.y) > 16 * 16;
+      T.pathT -= dt;
+      if (ctl.moveNew || (changed && T.pathT <= 0)) {
+        T.pathT = 0.12;
+        if (!T.vehicle) {
+          const v = this.vehicles.find((v) => v.alive && !v.team && dist2(v.x, v.y, ctl.move.x, ctl.move.y) < (v.r + 10) ** 2);
+          if (v || ctl.moveNew) T.boardTarget = v || null;
+        }
+        const mode = T.vehicle ? T.vehicle.T.mode : 'foot';
+        const r = T.vehicle ? T.vehicle.T.colR : 7;
+        const p = this.map.findPath(mover.x, mover.y, ctl.move.x, ctl.move.y, r, mode);
+        if (p && p.length) { T.path = p; T.goal = { x: ctl.move.x, y: ctl.move.y }; T.marker = { x: p[p.length - 1].x, y: p[p.length - 1].y, t: 0 }; }
+      }
+    }
+    if (ctl.switchSpecial) { T.special = T.special === 'grenade' ? 'rocket' : 'grenade'; Sfx.click(); }
+    if (ctl.selectSpecial) T.special = ctl.selectSpecial;
+    if (ctl.throw && T.throwCd <= 0 && L && !T.vehicle) {
+      if (T.special === 'grenade' && T.grenades <= 0 && T.rockets > 0) T.special = 'rocket';
+      else if (T.special === 'rocket' && T.rockets <= 0 && T.grenades > 0) T.special = 'grenade';
+      if (T.special === 'grenade' && T.grenades > 0) { this.throwGrenade(L, ctl.aimX, ctl.aimY); T.grenades--; T.throwCd = 0.55; }
+      else if (T.special === 'rocket' && T.rockets > 0) { this.fireRocket(L, ctl.aimX, ctl.aimY); T.rockets--; T.throwCd = 0.7; }
       else if (!this.tips.noAmmo) { this.tips.noAmmo = 1; this.msg('Out of explosives. Look for supply crates.', 'warn'); }
     }
   }
 
-  updateSquad(dt, ctl) {
-    const L = this.leader;
-    const firing = ctl && ctl.fire && this.phase === 'play' && !this.demo;
-    if (L) {
-      // Leader follows path
-      let moving = false;
-      if (this.path && this.path.length && this.phase === 'play') {
-        const wp = this.path[0];
-        const d = dist(L.x, L.y, wp.x, wp.y);
-        const sp = L.speed * (L.inWater ? 0.5 : 1) * dt;
-        if (d < 3) this.path.shift();
-        else {
-          const f = Math.min(1, sp / d);
-          const ox = L.x, oy = L.y;
-          this.moveEntity(L, (wp.x - L.x) * f, (wp.y - L.y) * f);
-          moving = dist2(ox, oy, L.x, L.y) > 0.01;
-          if (!moving) this.path.shift();
-          else if (!firing) L.face = turnToward(L.face, Math.atan2(wp.y - L.y, wp.x - L.x), 12 * dt);
-          if (d <= sp) this.path.shift();
-        }
-        if (!this.path.length) this.path = null;
-      }
-      this.stepAnim(L, moving, dt);
-      const last = this.trail[this.trail.length - 1];
-      if (!last || dist2(last.x, last.y, L.x, L.y) > 25) {
-        this.trail.push({ x: L.x, y: L.y });
-        if (this.trail.length > 500) this.trail.splice(0, 100);
-      }
+  updateTeams(dt, ctl) {
+    const playing = this.phase === 'play' && !this.demo;
+    const firingActive = !!(ctl && ctl.fire && playing);
+    for (const T of this.teams) {
+      if (T.vehicle) this.driveVehicle(T, dt, ctl, T === this.team);
+      else this.walkTeam(T, dt, firingActive && T === this.team);
+      this.updateFollowers(T, dt, firingActive && T === this.team);
     }
-    // Followers: remaining troopers, then rescued colonists
-    const followers = this.troopers.slice(1);
-    for (const c of this.colonists) if (c.state === 'following') followers.push(c);
-    followers.forEach((f, i) => {
-      const tp = this.trailPoint((i + 1) * SPACING);
-      const d = dist(f.x, f.y, tp.x, tp.y);
-      let moving = false;
-      if (d > 2.5) {
-        const base = (f.speed || 95) * (f.inWater ? 0.5 : 1);
-        const sp = base * (d > 60 ? 1.6 : d > 25 ? 1.2 : 1) * dt;
-        const k = Math.min(1, sp / d);
-        const ox = f.x, oy = f.y;
-        this.moveEntity(f, (tp.x - f.x) * k, (tp.y - f.y) * k);
-        moving = dist2(ox, oy, f.x, f.y) > 0.01;
-        if (moving && !(firing && f instanceof Trooper)) f.face = turnToward(f.face, Math.atan2(tp.y - f.y, tp.x - f.x), 10 * dt);
-      }
-      this.stepAnim(f, moving && d > 2.5, dt);
-    });
-    // Keep the squad from stacking
-    const sq = this.troopers.concat(followers.filter((f) => !(f instanceof Trooper)));
+    // Keep people on foot from stacking
+    const sq = this.troopers.filter((t) => !t.inVehicle);
+    for (const c of this.colonists) if (c.state === 'following') sq.push(c);
     for (let i = 0; i < sq.length; i++) for (let j = i + 1; j < sq.length; j++) {
       const a = sq[i], b = sq[j];
       const d2 = dist2(a.x, a.y, b.x, b.y);
       if (d2 < 121 && d2 > 0.0001) {
         const d = Math.sqrt(d2), push = (11 - d) * 0.5;
         const nx = (b.x - a.x) / d, ny = (b.y - a.y) / d;
-        if (i > 0) this.moveEntity(a, -nx * push, -ny * push);
-        this.moveEntity(b, nx * push, ny * push);
+        if (!a.leader) this.moveEntity(a, -nx * push, -ny * push);
+        if (!b.leader) this.moveEntity(b, nx * push, ny * push);
       }
     }
     // Troopers: environment, hit timers, shooting
     for (const t of this.troopers) {
       t.hitT = Math.max(0, t.hitT - dt);
       t.recoil = Math.max(0, t.recoil - dt * 20);
+      t.fireCd -= dt;
+      if (t.inVehicle) { t.x = t.inVehicle.x; t.y = t.inVehicle.y; t.inWater = false; continue; }
       const tile = this.map.tileAt(t.x, t.y);
       t.inWater = tile === T_WATER;
       if (t.inWater && this.biome.liquid.damage) {
         t.acidT -= dt;
         if (t.acidT <= 0) { t.acidT = 0.5; this.damageFriendly(t, this.biome.liquid.damage * 0.5, t.x, t.y, 0, true); }
       }
-      t.fireCd -= dt;
-      if (firing) {
-        const a = Math.atan2(ctl.aimY - t.y, ctl.aimX - t.x);
-        t.face = turnToward(t.face, a, 16 * dt);
-        if (t.fireCd <= 0 && !t.inWater && Math.abs(angDiff(t.face, a)) < 0.5) this.fireBullet(t, ctl.aimX, ctl.aimY);
+      if (t.team === this.team) {
+        if (firingActive) {
+          const a = Math.atan2(ctl.aimY - t.y, ctl.aimX - t.x);
+          t.face = turnToward(t.face, a, 16 * dt);
+          if (t.fireCd <= 0 && !t.inWater && Math.abs(angDiff(t.face, a)) < 0.5) this.fireBullet(t, ctl.aimX, ctl.aimY);
+        }
+      } else if (playing) {
+        // Teams you are not commanding hold their ground and defend themselves.
+        t.autoT = (t.autoT || 0) - dt;
+        if (t.autoT <= 0) { t.autoT = rand(0.2, 0.35); t.autoTarget = this.nearestAlien(t.x, t.y, 260); }
+        const a0 = t.autoTarget;
+        if (a0 && a0.hp > 0) {
+          const a = Math.atan2(a0.y - t.y, a0.x - t.x);
+          t.face = turnToward(t.face, a, 12 * dt);
+          if (t.fireCd <= 0 && !t.inWater && Math.abs(angDiff(t.face, a)) < 0.4) { this.fireBullet(t, a0.x, a0.y); t.fireCd *= 1.4; }
+        }
       }
       // Nests are solid to troopers
       for (const n of this.nests) {
         const d = dist(t.x, t.y, n.x, n.y), m = n.r + t.r - 4;
         if (d < m && d > 0.01) this.moveEntity(t, (t.x - n.x) / d * (m - d), (t.y - n.y) / d * (m - d));
+      }
+      // Parked vehicles are solid too
+      for (const v of this.vehicles) {
+        if (v.team === t.team && t.team.boardTarget === v) continue;
+        const d = dist(t.x, t.y, v.x, v.y), m = v.T.colR + t.r;
+        if (d < m && d > 0.01) this.moveEntity(t, (t.x - v.x) / d * (m - d), (t.y - v.y) / d * (m - d));
       }
       if (this.deployed) {
         this.lights.push({ x: t.x, y: t.y, r: 95, c: '#ffe6c0', i: 0.7 });
@@ -386,8 +518,10 @@ class World {
       c.hitT = Math.max(0, c.hitT - dt);
       if (c.state === 'waiting') {
         c.face += Math.sin(this.time + c.x) * dt;
-        if (this.troopers.some((t) => dist2(t.x, t.y, c.x, c.y) < 38 * 38)) {
+        const finder = this.troopers.find((t) => dist2(t.x, t.y, c.x, c.y) < (t.inVehicle ? 48 : 38) ** 2);
+        if (finder) {
           c.state = 'following';
+          c.team = finder.team;
           this.msg('Colonist found. Escort them to the extraction beacon.', 'good');
           Sfx.pickup();
         }
@@ -402,6 +536,7 @@ class World {
         this.stepAnim(c, dist2(ox, oy, c.x, c.y) > 0.01, dt);
         if (d > 12 && dist2(ox, oy, c.x, c.y) < 0.0001) { c.x = lerp(c.x, this.beacon.x, 0.02); c.y = lerp(c.y, this.beacon.y, 0.02); }
       }
+      if (c.state === 'following' && (!c.team || !this.teams.includes(c.team))) c.team = this.team;
       if ((c.state === 'following' || c.state === 'boarding') && this.beacon && dist2(c.x, c.y, this.beacon.x, this.beacon.y) < (this.beacon.r * 0.6) ** 2) {
         c.state = 'rescued';
         this.stats.rescued++;
@@ -410,6 +545,210 @@ class World {
         for (let i = 0; i < 20; i++) this.particles.add({ kind: 'glow', add: true, x: c.x + rand(-8, 8), y: c.y, vy: rand(-120, -40), size: rand(3, 6), color: '#7fffd0', life: rand(0.5, 1) });
       }
     }
+  }
+
+  nearestAlien(x, y, range) {
+    let best = null, bd = range * range;
+    for (const a of this.aliens) {
+      const d = dist2(x, y, a.x, a.y);
+      if (d < bd && this.map.lineClear(x, y, a.x, a.y)) { bd = d; best = a; }
+    }
+    return best;
+  }
+
+  walkTeam(T, dt, firing) {
+    const L = T.members[0];
+    if (!L) return;
+    let moving = false;
+    if (T.path && T.path.length && this.phase === 'play') {
+      const wp = T.path[0];
+      const d = dist(L.x, L.y, wp.x, wp.y);
+      const sp = L.speed * (L.inWater ? 0.5 : 1) * dt;
+      if (d < 3) T.path.shift();
+      else {
+        const f = Math.min(1, sp / d);
+        const ox = L.x, oy = L.y;
+        this.moveEntity(L, (wp.x - L.x) * f, (wp.y - L.y) * f);
+        moving = dist2(ox, oy, L.x, L.y) > 0.01;
+        if (!moving) T.path.shift();
+        else if (!firing) L.face = turnToward(L.face, Math.atan2(wp.y - L.y, wp.x - L.x), 12 * dt);
+        if (d <= sp) T.path.shift();
+      }
+      if (!T.path.length) T.path = null;
+    }
+    this.stepAnim(L, moving, dt);
+    const bt = T.boardTarget;
+    if (bt && bt.alive && !bt.team && dist2(L.x, L.y, bt.x, bt.y) < (bt.r + 18) ** 2) this.boardVehicle(T, bt);
+    else if (bt && (!bt.alive || bt.team)) T.boardTarget = null;
+    const last = T.trail[T.trail.length - 1];
+    if (!last || dist2(last.x, last.y, L.x, L.y) > 25) {
+      T.trail.push({ x: L.x, y: L.y });
+      if (T.trail.length > 500) T.trail.splice(0, 100);
+    }
+  }
+
+  updateFollowers(T, dt, firing) {
+    const followers = T.vehicle ? [] : T.members.slice(1);
+    for (const c of this.colonists) if (c.state === 'following' && c.team === T) followers.push(c);
+    const base = T.vehicle ? T.vehicle.r + 6 : 0;
+    followers.forEach((f, i) => {
+      const tp = this.trailPoint(T, base + (i + 1) * SPACING);
+      const d = dist(f.x, f.y, tp.x, tp.y);
+      let moving = false;
+      if (d > 2.5) {
+        const sp0 = (f.speed || 95) * (f.inWater ? 0.5 : 1);
+        const sp = sp0 * (d > 60 ? 1.6 : d > 25 ? 1.2 : 1) * dt;
+        const k = Math.min(1, sp / d);
+        const ox = f.x, oy = f.y;
+        this.moveEntity(f, (tp.x - f.x) * k, (tp.y - f.y) * k);
+        moving = dist2(ox, oy, f.x, f.y) > 0.01;
+        if (moving && !(firing && f instanceof Trooper)) f.face = turnToward(f.face, Math.atan2(tp.y - f.y, tp.x - f.x), 10 * dt);
+      }
+      this.stepAnim(f, moving && d > 2.5, dt);
+    });
+  }
+
+  driveVehicle(T, dt, ctl, active) {
+    const v = T.vehicle, VT = v.T;
+    let target = 0;
+    if (T.path && T.path.length && this.phase === 'play') {
+      const wp = T.path[0];
+      const d = dist(v.x, v.y, wp.x, wp.y);
+      if (d < 12 || (T.path.length > 1 && d < 24)) T.path.shift();
+      else {
+        const a = Math.atan2(wp.y - v.y, wp.x - v.x);
+        const diff = Math.abs(angDiff(v.face, a));
+        v.face = turnToward(v.face, a, VT.turn * dt * (0.85 + 0.15 * Math.min(1, Math.abs(v.vel) / VT.speed)));
+        target = VT.speed * (diff > 1.2 ? 0.12 : diff > 0.5 ? 0.5 : 1);
+        if (T.path.length === 1) target = Math.min(target, d * 2.4 + 20);
+      }
+      if (!T.path.length) T.path = null;
+    }
+    const tile = this.map.tileAt(v.x, v.y);
+    if (tile === T_WATER && VT.mode === 'foot') target *= VT.waterMul;
+    v.vel += clamp(target - v.vel, -VT.accel * 1.6 * dt, VT.accel * dt);
+    const ox = v.x, oy = v.y;
+    this.moveEntity(v, Math.cos(v.face) * v.vel * dt, Math.sin(v.face) * v.vel * dt, VT.colR, VT.mode);
+    const moved = dist(ox, oy, v.x, v.y);
+    if (v.vel > 20 && moved < v.vel * dt * 0.3) {
+      v.vel *= 0.5; v.stuckT += dt;
+      if (v.stuckT > 0.5 && T.path) { T.path.shift(); v.stuckT = 0; if (!T.path.length) T.path = null; }
+    } else v.stuckT = 0;
+    v.roll += moved;
+    // Dust, spray and wake
+    if (moved > 0.5 && Math.random() < 0.5) {
+      const bx = v.x - Math.cos(v.face) * v.r, by = v.y - Math.sin(v.face) * v.r;
+      const wet = tile === T_WATER || tile === T_LAVA;
+      this.particles.add({ kind: wet ? 'ring' : 'smoke', x: bx + rand(-5, 5), y: by + rand(-5, 5), vx: rand(-15, 15), vy: rand(-15, 15), drag: 2, size: wet ? 4 : rand(4, 7), size2: 16, grow: 14, color: wet ? this.biome.liquid.foam : this.biome.ground[3], alpha: 0.35, life: 0.8 });
+      if (VT.mode === 'foot' && tile === T_GROUND && Math.random() < 0.3) Decals.footprint(this, bx, by, v.face, Math.random() < 0.5 ? -3 : 3);
+    }
+    const last = T.trail[T.trail.length - 1];
+    if (!last || dist2(last.x, last.y, v.x, v.y) > 25) { T.trail.push({ x: v.x, y: v.y }); if (T.trail.length > 500) T.trail.splice(0, 100); }
+    // Running aliens over
+    if (VT.crush && Math.abs(v.vel) > 45) {
+      for (const a of this.aliens.slice()) {
+        if (dist2(a.x, a.y, v.x, v.y) > (v.r + a.r * 0.6) ** 2) continue;
+        if (a.type === 'skitter' || a.type === 'spitter') this.damageAlien(a, 999, T.members[0], v.face, 0, true);
+        else if ((a.crushCd || 0) < this.time) { a.crushCd = this.time + 0.5; this.damageAlien(a, 35, T.members[0], v.face, 200, true); v.vel *= 0.3; this.damageVehicle(v, 10); }
+      }
+    }
+    // Guns
+    v.fireCd -= dt;
+    v.recoil = Math.max(0, v.recoil - dt * 6);
+    let aim = null;
+    if (active && ctl && this.phase === 'play') {
+      aim = { x: ctl.aimX, y: ctl.aimY };
+      v.turret = turnToward(v.turret, Math.atan2(aim.y - v.y, aim.x - v.x), VT.turretTurn * dt);
+      if (!ctl.fire) aim = null;
+    } else if (this.phase === 'play') {
+      v.autoT -= dt;
+      if (v.autoT <= 0) { v.autoT = 0.3; v.autoTarget = this.nearestAlien(v.x, v.y, VT.weapon === 'cannon' ? 360 : 300); }
+      if (v.autoTarget && v.autoTarget.hp > 0) aim = { x: v.autoTarget.x, y: v.autoTarget.y };
+      if (aim) v.turret = turnToward(v.turret, Math.atan2(aim.y - v.y, aim.x - v.x), VT.turretTurn * dt);
+    } else v.turret = turnToward(v.turret, v.face, VT.turretTurn * dt);
+    if (aim && v.fireCd <= 0) {
+      const a = Math.atan2(aim.y - v.y, aim.x - v.x);
+      if (Math.abs(angDiff(v.turret, a)) < (VT.weapon === 'cannon' ? 0.12 : 0.3)) this.fireVehicle(v, aim, T.members[0]);
+    }
+    // Headlights
+    this.lights.push({ x: v.x, y: v.y, r: 110, c: '#ffe6c0', i: 0.6 });
+    this.lights.push({ x: v.x + Math.cos(v.face) * 70, y: v.y + Math.sin(v.face) * 70, r: 90, c: '#fff4d8', i: 0.7 });
+  }
+
+  fireVehicle(v, aim, crew) {
+    const VT = v.T;
+    const tx = v.x, ty = v.y;
+    if (VT.weapon === 'cannon') {
+      const C = VT.cannon;
+      const mx = tx + Math.cos(v.turret) * C.len, my = ty + Math.sin(v.turret) * C.len;
+      const d = clamp(dist(tx, ty, aim.x, aim.y), 60, C.range);
+      this.throwables.push({ kind: 'shell', x: mx, y: my, vx: Math.cos(v.turret) * 640, vy: Math.sin(v.turret) * 640, a: v.turret, travel: 0, maxD: d - C.len, src: crew, R: C.R, dmg: C.dmg, owner: v });
+      v.fireCd = C.cd; v.recoil = 1;
+      this.shake = Math.min(14, this.shake + 3);
+      this.sound('boom', v.x, v.y, 0.6, 0.4);
+      this.lights.push({ x: mx, y: my, r: 140, c: '#ffd890', i: 1 });
+      this.particles.add({ kind: 'glow', add: true, x: mx, y: my, size: 16, color: '#ffcf70', life: 0.08 });
+      for (let i = 0; i < 8; i++) this.particles.add({ kind: 'smoke', x: mx, y: my, vx: Math.cos(v.turret + rand(-0.8, 0.8)) * rand(30, 120), vy: Math.sin(v.turret + rand(-0.8, 0.8)) * rand(30, 120), drag: 3, size: rand(6, 10), grow: 18, color: '#a8a8a0', alpha: 0.55, life: rand(0.6, 1.1) });
+      return;
+    }
+    const G = VT.gun;
+    v.barrel = -v.barrel;
+    const px = -Math.sin(v.turret) * 1.8 * v.barrel, py = Math.cos(v.turret) * 1.8 * v.barrel;
+    const a = Math.atan2(aim.y - ty, aim.x - tx) + gauss() * G.spread;
+    const mx = tx + Math.cos(v.turret) * G.len + px, my = ty + Math.sin(v.turret) * G.len + py;
+    const sp = 1000;
+    this.bullets.push({ x: mx, y: my, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: G.range / sp, dmg: G.dmg, src: crew, px: mx, py: my });
+    v.fireCd = G.rate * rand(0.9, 1.1); v.recoil = 1.5;
+    this.stats.shots++;
+    this.lights.push({ x: mx, y: my, r: 70, c: '#ffd890', i: 0.9 });
+    this.particles.add({ kind: 'glow', add: true, x: mx, y: my, size: rand(6, 9), color: '#ffcf70', life: 0.05 });
+    this.sound('shot', v.x, v.y, 0.9);
+  }
+
+  updateVehicles(dt) {
+    for (const v of this.vehicles) {
+      v.hitT = Math.max(0, v.hitT - dt);
+      if (!v.team) {
+        v.vel *= Math.max(0, 1 - 4 * dt);
+        if (Math.abs(v.vel) > 1) this.moveEntity(v, Math.cos(v.face) * v.vel * dt, Math.sin(v.face) * v.vel * dt, v.T.colR, v.T.mode);
+      }
+      // Nests are solid to vehicles
+      for (const n of this.nests) {
+        const d = dist(v.x, v.y, n.x, n.y), m = n.r + v.T.colR;
+        if (d < m && d > 0.01) { this.moveEntity(v, (v.x - n.x) / d * (m - d), (v.y - n.y) / d * (m - d), v.T.colR, v.T.mode); v.vel *= 0.5; }
+      }
+      if (v.hp < v.maxHp * 0.4) {
+        v.smokeT -= dt;
+        if (v.smokeT <= 0) {
+          v.smokeT = 0.08;
+          this.particles.add({ kind: 'smoke', x: v.x + rand(-4, 4), y: v.y + rand(-4, 4), vx: rand(-10, 10), vy: rand(-30, -10), drag: 1, size: rand(4, 7), grow: 14, color: '#2a2624', alpha: 0.6, life: rand(0.8, 1.4) });
+          if (v.hp < v.maxHp * 0.2 && Math.random() < 0.4) this.particles.add({ kind: 'glow', add: true, x: v.x + rand(-5, 5), y: v.y + rand(-5, 5), vy: -20, size: rand(3, 6), color: '#ff7a20', life: 0.4 });
+        }
+      }
+    }
+  }
+
+  damageVehicle(v, dmg) {
+    if (!v.alive) return;
+    v.hp -= dmg * 0.6;
+    v.hitT = 0.12;
+    this.sound('ping', v.x, v.y, 0.8);
+    for (let i = 0; i < 3; i++) this.particles.add({ kind: 'spark', add: true, x: v.x + rand(-v.r, v.r) * 0.6, y: v.y + rand(-v.r, v.r) * 0.6, vx: rand(-160, 160), vy: rand(-160, 160), drag: 6, color: '#ffd9a0', life: rand(0.1, 0.25) });
+    if (v.hp <= 0) this.destroyVehicle(v);
+  }
+
+  destroyVehicle(v) {
+    if (!v.alive) return;
+    v.alive = false;
+    this.vehicles = this.vehicles.filter((o) => o !== v);
+    const T = v.team;
+    if (T) {
+      this.msg(`The ${v.T.name} is destroyed! ${T.name} team bails out.`, 'bad');
+      this.exitVehicle(T, true);
+    }
+    Decals.scorch(this, v.x, v.y, v.r * 2.2);
+    Decals.corpse(this, drawVehicle, v);
+    this.explode(v.x, v.y, 70, 120, null);
   }
 
   stepAnim(e, moving, dt) {
@@ -425,11 +764,11 @@ class World {
     }
   }
 
-  trailPoint(dd) {
-    const L = this.leader;
-    let px = L.x, py = L.y, rem = dd;
-    for (let k = this.trail.length - 1; k >= 0; k--) {
-      const q = this.trail[k];
+  trailPoint(T, dd) {
+    const H = T.vehicle || T.members[0];
+    let px = H.x, py = H.y, rem = dd;
+    for (let k = T.trail.length - 1; k >= 0; k--) {
+      const q = T.trail[k];
       const seg = dist(px, py, q.x, q.y);
       if (seg >= rem) { const t = rem / seg; return { x: px + (q.x - px) * t, y: py + (q.y - py) * t }; }
       rem -= seg; px = q.x; py = q.y;
@@ -593,13 +932,13 @@ class World {
           for (const n of this.nests) if (dist2(n.x, n.y, p.x, p.y) < n.r * n.r) boom = true;
           for (const b of this.barrels) if (b.alive && dist2(b.x, b.y, p.x, p.y) < b.r * b.r) boom = true;
         }
-        this.particles.add({ kind: 'smoke', x: p.x, y: p.y, vx: rand(-15, 15), vy: rand(-15, 15), drag: 2, size: rand(4, 7), grow: 16, color: '#c8c8c8', alpha: 0.55, life: rand(0.6, 1.1) });
+        if (p.kind === 'rocket' || Math.random() < 0.35) this.particles.add({ kind: 'smoke', x: p.x, y: p.y, vx: rand(-15, 15), vy: rand(-15, 15), drag: 2, size: rand(4, 7), grow: 16, color: '#c8c8c8', alpha: p.kind === 'rocket' ? 0.55 : 0.3, life: rand(0.6, 1.1) });
         this.particles.add({ kind: 'glow', add: true, x: p.x - Math.cos(p.a) * 6, y: p.y - Math.sin(p.a) * 6, size: rand(6, 9), color: '#ffb040', life: 0.08 });
         this.lights.push({ x: p.x, y: p.y, r: 70, c: '#ffb050', i: 0.9 });
       }
       if (boom) {
         if (p.kind === 'grenade') this.explode(p.x, p.y, 62, 170, p.src);
-        else this.explode(p.x, p.y, 58, 190, p.src);
+        else this.explode(p.x, p.y, p.R || 58, p.dmg || 190, p.src, p.owner);
         continue;
       }
       L[j++] = p;
@@ -623,18 +962,23 @@ class World {
   updatePickups() {
     for (const p of this.pickups) {
       if (p.taken) continue;
-      const t = this.troopers.find((t) => dist2(t.x, t.y, p.x, p.y) < 20 * 20);
+      const t = this.troopers.find((t) => dist2(t.x, t.y, p.x, p.y) < (t.inVehicle ? 28 : 20) ** 2);
       if (!t) continue;
       p.taken = true;
       Sfx.pickup();
-      if (p.kind === 'grenades') { this.grenades += 4; this.msg('+4 grenades', 'good'); }
-      else if (p.kind === 'rockets') { this.rockets += 3; this.msg('+3 rockets', 'good'); }
-      else { for (const s of this.troopers) s.hp = Math.min(s.maxHp, s.hp + 60); this.msg('Squad patched up', 'good'); }
+      const T = t.team, who = this.teams.length > 1 ? `${T.name}: ` : '';
+      if (p.kind === 'grenades') { T.grenades += 4; this.msg(`${who}+4 grenades`, 'good'); }
+      else if (p.kind === 'rockets') { T.rockets += 3; this.msg(`${who}+3 rockets`, 'good'); }
+      else {
+        for (const s of T.members) s.hp = Math.min(s.maxHp, s.hp + 60);
+        if (T.vehicle) T.vehicle.hp = Math.min(T.vehicle.maxHp, T.vehicle.hp + T.vehicle.maxHp * 0.35);
+        this.msg(`${who}patched up${T.vehicle ? ' and vehicle repaired' : ''}`, 'good');
+      }
     }
     this.pickups = this.pickups.filter((p) => !p.taken);
   }
 
-  explode(x, y, R, dmg, src) {
+  explode(x, y, R, dmg, src, owner = null) {
     this.sound('boom', x, y, 1, R / 60);
     this.shake = Math.min(14, this.shake + R / 7);
     this.lights.push({ x, y, r: R * 4, c: '#ffb060', i: 1 });
@@ -649,8 +993,14 @@ class World {
       if (d < R + n.r) { n.hp -= dmg * (1 - (d / (R + n.r)) * 0.4); n.hitT = 0.2; if (n.hp <= 0) this.destroyNest(n, src); }
     }
     for (const t of this.targets()) {
+      if (t === owner) continue;
       const d = dist(t.x, t.y, x, y), rr = R * 0.85 + t.r;
       if (d < rr) this.damageFriendly(t, dmg * 0.9 * (1 - (d / rr) * 0.7), x, y, 300);
+    }
+    for (const v of this.vehicles.slice()) {
+      if (v.team) continue;
+      const d = dist(v.x, v.y, x, y);
+      if (d < R + v.r) this.damageVehicle(v, dmg * (1 - (d / (R + v.r)) * 0.6));
     }
     for (const b of this.barrels) {
       if (b.alive && b.fuse === undefined && dist2(b.x, b.y, x, y) < (R + b.r) ** 2) b.fuse = rand(0.08, 0.2);
@@ -744,6 +1094,8 @@ class World {
 
   damageFriendly(t, dmg, fx, fy, kb = 0, silent = false) {
     if (!t.alive || this.phase === 'outro') return;
+    if (t instanceof Vehicle) return this.damageVehicle(t, dmg);
+    if (t.inVehicle) return;
     t.hp -= dmg;
     t.hitT = 0.15;
     if (kb) {
@@ -764,8 +1116,14 @@ class World {
         this.troopers = this.troopers.filter((o) => o !== t);
         this.fallen.push(t);
         this.msg(`${RANKS[t.data.rank].short} ${t.data.name} is down!`, 'bad');
+        const T = t.team;
+        if (T) {
+          const wasLeader = T.members[0] === t;
+          T.members = T.members.filter((o) => o !== t);
+          if (!T.members.length) this.removeTeam(T);
+          else if (wasLeader && T.goal && !T.vehicle) T.path = this.map.findPath(T.members[0].x, T.members[0].y, T.goal.x, T.goal.y);
+        }
         this.updateLeader();
-        if (t.leader === false && this.leader && this.goal) this.path = this.map.findPath(this.leader.x, this.leader.y, this.goal.x, this.goal.y);
       } else {
         this.msg('A colonist has been killed.', 'bad');
       }
@@ -788,13 +1146,22 @@ class World {
           this.moveEntity(b, nx * push * wb * 2, ny * push * wb * 2, b.T.colR);
         }
       }
-      // Keep aliens out of the squad's personal space
+      // Keep aliens out of the squad's personal space and out of vehicles
       for (const t of this.troopers) {
+        if (t.inVehicle) continue;
         const m = a.T.colR + t.r;
         const d2 = dist2(a.x, a.y, t.x, t.y);
         if (d2 < m * m && d2 > 0.0001) {
           const d = Math.sqrt(d2);
           this.moveEntity(a, (a.x - t.x) / d * (m - d), (a.y - t.y) / d * (m - d), a.T.colR);
+        }
+      }
+      for (const v of this.vehicles) {
+        const m = a.T.colR + v.T.colR + 2;
+        const d2 = dist2(a.x, a.y, v.x, v.y);
+        if (d2 < m * m && d2 > 0.0001) {
+          const d = Math.sqrt(d2);
+          this.moveEntity(a, (a.x - v.x) / d * (m - d), (a.y - v.y) / d * (m - d), a.T.colR);
         }
       }
     }
@@ -833,7 +1200,7 @@ class World {
     }
     if (this.objectives.every((o) => o.done)) {
       this.phase = 'outro'; this.phaseT = 0;
-      this.path = null;
+      for (const T of this.teams) { if (T.vehicle) this.exitVehicle(T, true); T.path = null; }
       this.msg('Mission accomplished. Dropship inbound.', 'good');
       Sfx.fanfare();
       Sfx.engine(3.2);
@@ -883,9 +1250,10 @@ class World {
       drawBeacon(g, this.beacon, t, this.extractOpen || (this.rescueNeed && this.colonists.some((c) => c.state === 'following' || c.state === 'boarding')));
       if (this.extractOpen || this.rescueNeed) this.lights.push({ x: this.beacon.x, y: this.beacon.y, r: 120, c: '#70ffb0', i: 0.6 });
     }
-    if (this.marker && this.path) {
-      this.marker.t += 1 / 60;
-      const m = this.marker;
+    const AT = this.team;
+    if (AT && AT.marker && AT.path) {
+      AT.marker.t += 1 / 60;
+      const m = AT.marker;
       g.strokeStyle = `rgba(255,190,80,${0.8 - (m.t % 0.8)})`; g.lineWidth = 1.5;
       g.beginPath(); g.arc(m.x, m.y, 4 + (m.t % 0.8) * 14, 0, TAU); g.stroke();
     }
@@ -894,13 +1262,23 @@ class World {
 
     // Shadows
     for (const a of this.aliens) if (inView(a)) drawShadow(g, a.x, a.y, a.r * 1.1, a.r * 0.8, 0.3);
-    if (this.deployed) for (const tr of this.troopers) drawShadow(g, tr.x, tr.y, 8, 6, 0.3);
+    const multi = this.teams.length > 1;
+    if (this.deployed) {
+      for (const tr of this.troopers) {
+        if (tr.inVehicle) continue;
+        drawShadow(g, tr.x, tr.y, 8, 6, 0.3);
+        if (multi && tr.team) { g.strokeStyle = tr.team.color; g.globalAlpha = tr.team === AT ? 0.75 : 0.4; g.lineWidth = 1.2; ellipse(g, tr.x, tr.y + 2, 10, 7); g.stroke(); g.globalAlpha = 1; }
+        if (tr.marked) { g.strokeStyle = '#ffffff'; g.lineWidth = 1; g.setLineDash([3, 3]); ellipse(g, tr.x, tr.y + 1, 13, 10); g.stroke(); g.setLineDash([]); }
+      }
+    }
+    for (const v of this.vehicles) if (inView(v, 80)) drawShadow(g, v.x, v.y, v.r * 1.15, v.r * 0.85, 0.35);
 
     // Depth-sorted units and flora
     const list = [];
     for (const a of this.aliens) if (inView(a)) list.push({ y: a.y, d: 1, e: a });
     for (const n of this.nests) if (inView(n, 90)) list.push({ y: n.y - 10, d: 2, e: n });
-    if (this.deployed) for (const tr of this.troopers) list.push({ y: tr.y, d: 3, e: tr });
+    if (this.deployed) for (const tr of this.troopers) if (!tr.inVehicle) list.push({ y: tr.y, d: 3, e: tr });
+    for (const v of this.vehicles) if (inView(v, 80)) list.push({ y: v.y, d: 6, e: v });
     for (const c of this.colonists) if (c.state !== 'rescued' && c.alive && inView(c)) list.push({ y: c.y, d: 4, e: c });
     const tx0 = Math.max(0, Math.floor(x0 / TILE) - 1), tx1 = Math.min(map.w - 1, Math.floor(x1 / TILE) + 1);
     const ty0 = Math.max(0, Math.floor(y0 / TILE) - 1), ty1 = Math.min(map.h - 1, Math.floor(y1 / TILE) + 1);
@@ -910,6 +1288,7 @@ class World {
     }
     list.sort((a, b) => a.y - b.y);
     const glow = this.biome.floraGlow;
+    const L0 = this.focus;
     for (const it of list) {
       const e = it.e;
       if (it.d === 1) {
@@ -926,6 +1305,10 @@ class World {
       } else if (it.d === 3) {
         drawTrooper(g, e, t);
         if (e.hp < e.maxHp) this.healthBar(g, e.x, e.y - 14, 16, e.hp / e.maxHp, e.hp / e.maxHp > 0.4 ? '#7dffb0' : '#ff5040');
+      } else if (it.d === 6) {
+        drawVehicle(g, e, t);
+        if (e.hp < e.maxHp) this.healthBar(g, e.x, e.y - e.r - 10, e.r * 1.6, e.hp / e.maxHp, e.hp / e.maxHp > 0.4 ? '#7dffb0' : '#ff5040');
+        if (!e.team && this.deployed && L0 && dist2(L0.x, L0.y, e.x, e.y) < 320 * 320) this.vehicleLabel(g, e, t);
       } else if (it.d === 4) {
         drawColonist(g, e, t);
         this.lights.push({ x: e.x, y: e.y, r: 50, c: '#7ff0ff', i: 0.4 });
@@ -936,12 +1319,24 @@ class World {
         if (this.ambient) this.lights.push({ x: e.x, y: e.y, r: 44, c: glow, i: 0.35 });
       }
     }
-    // Leader chevron
-    const L = this.leader;
-    if (L && this.deployed && this.phase !== 'outro') {
-      const by = L.y - 22 + Math.sin(t * 5) * 1.5;
-      g.fillStyle = '#ffb13a';
-      g.beginPath(); g.moveTo(L.x - 4, by - 3); g.lineTo(L.x, by + 1); g.lineTo(L.x + 4, by - 3); g.lineTo(L.x + 4, by - 1); g.lineTo(L.x, by + 3); g.lineTo(L.x - 4, by - 1); g.closePath(); g.fill();
+    // Team leader chevrons: bright and bobbing for the team you command
+    if (this.deployed && this.phase !== 'outro') {
+      for (const T of this.teams) {
+        const H = T.vehicle || T.members[0];
+        if (!H) continue;
+        const act = T === AT;
+        if (!act && !multi) continue;
+        const by = H.y - (T.vehicle ? T.vehicle.r + 16 : 22) + (act ? Math.sin(t * 5) * 1.5 : 0);
+        const k = act ? 1 : 0.75;
+        g.globalAlpha = act ? 1 : 0.7;
+        g.fillStyle = T.color;
+        g.beginPath(); g.moveTo(H.x - 4 * k, by - 3 * k); g.lineTo(H.x, by + k); g.lineTo(H.x + 4 * k, by - 3 * k); g.lineTo(H.x + 4 * k, by - k); g.lineTo(H.x, by + 3 * k); g.lineTo(H.x - 4 * k, by - k); g.closePath(); g.fill();
+        if (multi) {
+          g.font = `600 ${act ? 7 : 6}px "Chakra Petch", sans-serif`; g.textAlign = 'center';
+          g.fillText(T.name, H.x, by - 5);
+        }
+        g.globalAlpha = 1;
+      }
     }
     // Throwables and acid
     for (const p of this.throwables) {
@@ -951,6 +1346,9 @@ class World {
         g.fillStyle = '#3c4a30'; g.beginPath(); g.arc(0, 0, 3, 0, TAU); g.fill();
         g.fillStyle = (t * 8) % 1 < 0.5 ? '#ff3030' : '#601010'; g.fillRect(-1, -4, 2, 2);
         g.restore();
+      } else if (p.kind === 'shell') {
+        g.fillStyle = '#ffe2a0';
+        g.beginPath(); g.arc(p.x, p.y, 2.2, 0, TAU); g.fill();
       } else {
         g.save(); g.translate(p.x, p.y); g.rotate(p.a);
         g.fillStyle = '#d8d8d0'; g.fillRect(-6, -1.6, 10, 3.2);
@@ -991,6 +1389,22 @@ class World {
     return view;
   }
 
+  vehicleLabel(g, v, t) {
+    const pulse = 0.55 + 0.35 * Math.sin(t * 4);
+    const r = v.r + 6;
+    g.strokeStyle = `rgba(255,177,58,${pulse})`; g.lineWidth = 1.2;
+    for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+      g.beginPath(); g.moveTo(v.x + sx * r, v.y + sy * (r - 5)); g.lineTo(v.x + sx * r, v.y + sy * r); g.lineTo(v.x + sx * (r - 5), v.y + sy * r); g.stroke();
+    }
+    g.font = '600 7px "Chakra Petch", sans-serif'; g.textAlign = 'center';
+    g.fillStyle = 'rgba(0,0,0,0.6)';
+    const label = `${v.T.name} · ${v.T.seats} seats`;
+    const w = g.measureText(label).width + 6;
+    g.fillRect(v.x - w / 2, v.y + r + 3, w, 10);
+    g.fillStyle = '#ffd08a';
+    g.fillText(label, v.x, v.y + r + 11);
+  }
+
   healthBar(g, x, y, w, f, col) {
     g.fillStyle = 'rgba(0,0,0,0.6)'; g.fillRect(x - w / 2 - 1, y - 1, w + 2, 4);
     g.fillStyle = col; g.fillRect(x - w / 2, y, w * clamp(f, 0, 1), 2);
@@ -1021,7 +1435,7 @@ class World {
   renderDropship(g) {
     if (this.demo) return;
     let x, y, sc, alpha = 1;
-    const L = this.leader || { x: this.map.start.x, y: this.map.start.y };
+    const L = this.focus || { x: this.map.start.x, y: this.map.start.y };
     if (this.phase === 'intro') {
       const s = this.map.start;
       const p = this.phaseT;

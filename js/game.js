@@ -116,6 +116,27 @@ const Game = {
     click('btn-over-new', () => { this.campaign = this.freshCampaign(); this.save(); this.showBriefing(); });
     click('btn-win-title', () => this.showScreen('title'));
     click('btn-mute', () => { Sfx.setMuted(!Sfx.muted); this.updateMute(); });
+    const queue = (k, v = true) => { this.queued = this.queued || {}; this.queued[k] = v; Sfx.click(); };
+    $('btn-split').addEventListener('click', () => queue('split'));
+    $('btn-join').addEventListener('click', () => queue('join'));
+    $('btn-exit').addEventListener('click', () => queue('exit'));
+    $('btn-team').addEventListener('click', () => queue('switchTeam'));
+    $('hud-squad').addEventListener('pointerdown', (e) => {
+      const w = this.world;
+      if (!w) return;
+      const head = e.target.closest('[data-team]');
+      if (head) return queue('selectTeam', Number(head.dataset.team));
+      const row = e.target.closest('[data-id]');
+      if (!row) return;
+      const t = w.troopers.find((t) => String(t.data.id) === row.dataset.id);
+      if (!t) return;
+      if (t.team !== w.team) { for (const o of w.troopers) o.marked = false; queue('selectTeam', w.teams.indexOf(t.team)); }
+      t.marked = !t.marked;
+      this.updateHud(true);
+    });
+    for (const [id, k] of [['t-team', 'switchTeam'], ['t-split', 'split'], ['t-exit', 'exit']]) {
+      $(id).addEventListener('touchstart', (e) => { queue(k); e.preventDefault(); }, { passive: false });
+    }
     $('w-grenade').addEventListener('click', () => { if (this.world) this.world.special = 'grenade'; Sfx.click(); });
     $('w-rocket').addEventListener('click', () => { if (this.world) this.world.special = 'rocket'; Sfx.click(); });
     // Touch buttons
@@ -280,13 +301,26 @@ const Game = {
     $('w-rocket').classList.toggle('active', w.special === 'rocket');
     $('w-grenade').setAttribute('aria-pressed', String(w.special === 'grenade'));
     $('w-rocket').setAttribute('aria-pressed', String(w.special === 'rocket'));
-    const rows = w.troopers.map((t) => {
-      const f = clamp(t.hp / t.maxHp, 0, 1);
-      return `<li class="${t.leader ? 'leader' : ''}"><span class="insignia sm" style="--rank:${RANK_COLORS[t.data.rank]}">${rankBars(RANKS[t.data.rank].bars)}</span><span class="sq-name">${escapeHtml(t.data.name)}</span><span class="sq-k">${t.kills}</span><span class="hp"><i style="width:${(f * 100).toFixed(0)}%;background:${f > 0.4 ? 'var(--good)' : 'var(--bad)'}"></i></span></li>`;
+    const rows = [];
+    const bar = (f) => `<span class="hp"><i style="width:${(clamp(f, 0, 1) * 100).toFixed(0)}%;background:${f > 0.4 ? 'var(--good)' : 'var(--bad)'}"></i></span>`;
+    w.teams.forEach((T, i) => {
+      const act = T === w.team;
+      const v = T.vehicle;
+      const detail = v ? `${escapeHtml(v.T.name)}` : `${T.grenades}g · ${T.rockets}r`;
+      rows.push(`<li class="team-head${act ? ' active' : ''}" data-team="${i}" style="--team:${T.color}" title="Command ${T.name} team"><b>${T.name}</b><span>${detail}</span>${v ? bar(v.hp / v.maxHp) : ''}</li>`);
+      for (const t of T.members) {
+        const cls = [t.leader ? 'leader' : '', t.marked ? 'marked' : '', t.inVehicle ? 'riding' : ''].join(' ');
+        rows.push(`<li class="${cls}" data-id="${t.data.id}" style="--team:${T.color}" title="Mark for splitting"><span class="insignia sm" style="--rank:${RANK_COLORS[t.data.rank]}">${rankBars(RANKS[t.data.rank].bars)}</span><span class="sq-name">${escapeHtml(t.data.name)}</span><span class="sq-k">${t.kills}</span>${bar(t.hp / t.maxHp)}</li>`);
+      }
     });
     for (const t of w.fallen) rows.push(`<li class="dead"><span class="insignia sm" style="--rank:#555">✕</span><span class="sq-name">${escapeHtml(t.data.name)}</span><span class="sq-k">KIA</span></li>`);
     const html = rows.join('');
     if (force || html !== this._sqHtml) { $('hud-squad').innerHTML = html; this._sqHtml = html; }
+    const T = w.team;
+    $('btn-split').disabled = !T || !!T.vehicle || w.teams.length >= TEAM_DEFS.length || T.members.length < 2;
+    $('btn-join').disabled = !T || w.teams.length < 2;
+    $('btn-exit').disabled = !T || !T.vehicle;
+    $('btn-team').disabled = w.teams.length < 2;
     $('hud-kills').textContent = w.stats.kills;
     $('hud-reserve').textContent = this.campaign.reserve;
     this.drawMinimap();
@@ -306,7 +340,8 @@ const Game = {
     for (const a of w.aliens) {
       if (a.state === 'hunt' || (L && dist2(a.x, a.y, L.x, L.y) < 420 * 420)) dot(a.x, a.y, '#ff4a3a', a.r > 15 ? 4 : 2);
     }
-    for (const t of w.troopers) dot(t.x, t.y, '#ffffff', 3);
+    for (const v of w.vehicles) dot(v.x, v.y, v.team ? v.team.color : '#9aa4ad', 5);
+    for (const t of w.troopers) if (!t.inVehicle) dot(t.x, t.y, w.teams.length > 1 && t.team ? t.team.color : '#ffffff', 3);
     const vw = this.viewW / this.cam.zoom, vh = this.viewH / this.cam.zoom;
     g.strokeStyle = 'rgba(255,177,58,0.8)'; g.lineWidth = 1;
     g.strokeRect(((this.cam.x - vw / 2) / TILE) * k, ((this.cam.y - vh / 2) / TILE) * k, (vw / TILE) * k, (vh / TILE) * k);
@@ -334,7 +369,7 @@ const Game = {
         this.acc += dt;
         let first = true;
         while (this.acc >= 1 / 120) {
-          w.update(1 / 120, first ? ctl : Object.assign({}, ctl, { moveNew: false, throw: false, switchSpecial: false, selectSpecial: null }));
+          w.update(1 / 120, first ? ctl : Object.assign({}, ctl, { moveNew: false, throw: false, switchSpecial: false, selectSpecial: null, split: false, join: false, exit: false, switchTeam: false, selectTeam: null }));
           first = false;
           this.acc -= 1 / 120;
         }
@@ -380,12 +415,19 @@ const Game = {
       throw: Input.middlePressed || Input.hit('Space') || Input.hit('KeyE') || (Input.right && Input.leftPressed) || (Input.left && Input.rightPressed) || Input.touch.throwPressed,
       switchSpecial: Input.hit('Tab') || Input.hit('KeyQ'),
       selectSpecial: Input.hit('Digit1') ? 'grenade' : Input.hit('Digit2') ? 'rocket' : null,
+      split: Input.hit('KeyX'), join: Input.hit('KeyJ'), exit: Input.hit('KeyR'),
+      switchTeam: Input.hit('KeyC'), selectTeam: null,
     };
-    if (Input.left && !both && Input.inside) { ctl.move = m; ctl.moveNew = Input.leftPressed; }
+    // Actions queued from HUD and touch buttons
+    const q = this.queued || {};
+    this.queued = {};
+    for (const k of ['split', 'join', 'exit', 'switchTeam']) if (q[k]) ctl[k] = true;
+    if (q.selectTeam != null) ctl.selectTeam = q.selectTeam;
+    if ((Input.left || Input.leftPressed) && !both && Input.inside) { ctl.move = m; ctl.moveNew = Input.leftPressed; }
     if (Input.touch.tap) { ctl.move = this.screenToWorld(Input.touch.tap.x, Input.touch.tap.y); ctl.moveNew = true; }
-    if (Input.touch.enabled && (ctl.fire || ctl.throw) && w.leader) {
+    if (Input.touch.enabled && (ctl.fire || ctl.throw) && w.focus) {
       // Touch aims automatically at the nearest visible threat.
-      const L = w.leader;
+      const L = w.focus;
       let best = null, bd = 420 * 420;
       for (const a of w.aliens.concat(ctl.throw ? w.nests : [])) {
         const d = dist2(a.x, a.y, L.x, L.y);
@@ -397,7 +439,7 @@ const Game = {
   },
 
   updateCamera(dt, w, follow) {
-    const L = w.leader || w.map.start;
+    const L = w.focus || w.map.start;
     let tx = L.x, ty = L.y;
     if (follow && Input.inside && !Input.touch.enabled) {
       const m = this.screenToWorld(Input.mx, Input.my);
