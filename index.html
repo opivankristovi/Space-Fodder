@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Space Fodder</title>
+<meta name="description" content="A top-down squad shooter: lead armoured troopers against an alien swarm across twelve missions.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Chakra+Petch:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app">
+  <aside id="hud" hidden>
+    <div class="hud-head">
+      <span class="hud-logo">Space Fodder</span>
+      <span id="hud-mission" class="hud-mission"></span>
+    </div>
+    <section class="hud-block">
+      <h3>Objectives</h3>
+      <ul id="hud-obj" class="hud-obj"></ul>
+    </section>
+    <section class="hud-block">
+      <h3>Explosives</h3>
+      <div class="weapons">
+        <button id="w-grenade" class="weapon" type="button" aria-pressed="true"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="12" r="6"/><rect x="8" y="3" width="4" height="4"/></svg><span>Grenades</span><b>0</b><kbd>1</kbd></button>
+        <button id="w-rocket" class="weapon" type="button" aria-pressed="false"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 15 L13 5 L17 3 L15 7 L5 17 Z"/><path d="M3 12 L2 18 L8 17 Z"/></svg><span>Rockets</span><b>0</b><kbd>2</kbd></button>
+      </div>
+    </section>
+    <section class="hud-block grow">
+      <h3>Squad <span class="muted">kills</span></h3>
+      <ul id="hud-squad" class="hud-squad"></ul>
+    </section>
+    <section class="hud-block map-block">
+      <canvas id="hud-mini" width="180" height="140" aria-label="Minimap"></canvas>
+      <div class="hud-stats"><span>Kills <b id="hud-kills">0</b></span><span>Reserve <b id="hud-reserve">0</b></span></div>
+    </section>
+  </aside>
+
+  <main id="stage">
+    <canvas id="game"></canvas>
+    <div id="toasts" aria-live="polite"></div>
+    <div id="touch" hidden>
+      <button id="t-pause" type="button">II</button>
+      <button id="t-swap" type="button">Swap</button>
+      <button id="t-throw" type="button">Bomb</button>
+      <button id="t-fire" type="button">Fire</button>
+    </div>
+    <div id="loading" hidden><span>Dropping in…</span></div>
+
+    <section class="screen" data-screen="title">
+      <div class="title-wrap">
+        <p class="eyebrow">Orbital drop infantry · 12 missions · 5 worlds</p>
+        <h1 class="logo"><span>Space</span><span>Fodder</span></h1>
+        <p class="tag">Lead a squad of armoured troopers against an alien swarm. Every recruit has a name. Not all of them come home.</p>
+        <div class="menu">
+          <button id="btn-continue" class="primary" type="button" hidden>Continue</button>
+          <button id="btn-new" type="button">New campaign</button>
+          <button id="btn-howto" type="button">How to play</button>
+          <button id="btn-memorial" type="button">Wall of the fallen</button>
+          <button id="btn-mute" type="button" aria-pressed="true">Sound on</button>
+        </div>
+        <p class="hint">Left click to move · Right click to fire · Space to throw</p>
+      </div>
+    </section>
+
+    <section class="screen" data-screen="help" hidden>
+      <div class="panel">
+        <p class="eyebrow">Field manual</p>
+        <h2>How to play</h2>
+        <div class="help-grid">
+          <dl class="keys">
+            <div><dt>Left click / hold</dt><dd>Move the squad. Troopers follow the leader in a line.</dd></div>
+            <div><dt>Right click / hold, or F</dt><dd>Every trooper fires at the cursor.</dd></div>
+            <div><dt>Space, E, middle click, or both buttons</dt><dd>Leader throws a grenade or fires a rocket at the cursor.</dd></div>
+            <div><dt>1 / 2, Q or Tab</dt><dd>Pick grenades or rockets.</dd></div>
+            <div><dt>Esc or P</dt><dd>Pause. M mutes sound.</dd></div>
+            <div><dt>Ctrl + click</dt><dd>Fires on one-button trackpads.</dd></div>
+            <div><dt>Touch</dt><dd>Tap to move. Fire and Bomb aim at the nearest threat.</dd></div>
+          </dl>
+          <ul class="tips">
+            <li><b>Nests</b> keep hatching aliens while you are near. Only explosives break them.</li>
+            <li><b>Explosions</b> hurt everyone, your own troopers included. Throw long.</li>
+            <li>Troopers <b>cannot shoot while wading</b>. Acid pools burn and lava is a wall.</li>
+            <li><b>Fuel canisters</b> explode when shot. Grenades flatten alien flora.</li>
+            <li><b>Colonists</b> join the back of your line when a trooper reaches them. Walk them into the beacon.</li>
+            <li>Survivors are <b>promoted</b> after each win: tougher, faster, more accurate. The dead go on the wall.</li>
+          </ul>
+        </div>
+        <div class="actions"><button id="btn-help-back" class="primary" type="button">Back</button></div>
+      </div>
+    </section>
+
+    <section class="screen" data-screen="briefing" hidden>
+      <div class="panel brief">
+        <div class="brief-top">
+          <canvas id="planet" width="220" height="220" aria-hidden="true"></canvas>
+          <div class="brief-info">
+            <p id="brief-eyebrow" class="eyebrow"></p>
+            <h2 id="brief-title"></h2>
+            <p id="brief-world" class="muted"></p>
+            <p id="brief-text" class="brief-text"></p>
+            <div class="brief-cols">
+              <div><h3>Objectives</h3><ul id="brief-obj" class="obj-list"></ul></div>
+              <div><h3>Loadout</h3><p id="brief-load" class="loadout"></p></div>
+            </div>
+          </div>
+        </div>
+        <h3>Squad</h3>
+        <ol id="brief-squad" class="squad-grid"></ol>
+        <p id="brief-reserve" class="muted small"></p>
+        <div class="actions">
+          <button id="btn-deploy" class="primary" type="button">Deploy</button>
+          <button id="btn-brief-memorial" type="button">Wall of the fallen</button>
+          <button id="btn-brief-back" type="button">Main menu</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="screen" data-screen="debrief" hidden>
+      <div class="panel">
+        <p id="debrief-eyebrow" class="eyebrow"></p>
+        <h2 id="debrief-title"></h2>
+        <p id="debrief-reason" class="muted"></p>
+        <dl id="debrief-stats" class="stats"></dl>
+        <ol id="debrief-squad" class="squad-grid"></ol>
+        <div class="actions">
+          <button id="btn-debrief-next" class="primary" type="button">Next mission</button>
+          <button id="btn-debrief-memorial" type="button">Wall of the fallen</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="screen" data-screen="memorial" hidden>
+      <div class="panel">
+        <p class="eyebrow">In memory</p>
+        <h2>Wall of the fallen</h2>
+        <p id="memorial-count" class="muted"></p>
+        <ol id="memorial-list" class="memorial"></ol>
+        <div class="actions"><button id="btn-memorial-back" class="primary" type="button">Back</button></div>
+      </div>
+    </section>
+
+    <section class="screen" data-screen="paused" hidden>
+      <div class="panel narrow">
+        <p class="eyebrow">Paused</p>
+        <h2>Hold position</h2>
+        <p class="muted">Aborting counts as a failed mission. Anyone already dead stays dead.</p>
+        <div class="actions">
+          <button id="btn-resume" class="primary" type="button">Resume</button>
+          <button id="btn-abort" type="button">Abort mission</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="screen" data-screen="gameover" hidden>
+      <div class="panel narrow">
+        <p class="eyebrow">Campaign lost</p>
+        <h2 class="bad">The reserve is empty</h2>
+        <p id="over-stats" class="muted"></p>
+        <div class="actions"><button id="btn-over-new" class="primary" type="button">Start a new campaign</button></div>
+      </div>
+    </section>
+
+    <section class="screen" data-screen="victory" hidden>
+      <div class="panel narrow">
+        <p class="eyebrow">Campaign complete</p>
+        <h2 class="ok">The swarm is broken</h2>
+        <p id="win-stats" class="muted"></p>
+        <div class="actions"><button id="btn-win-title" class="primary" type="button">Main menu</button></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script src="js/util.js"></script>
+<script src="js/input.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/terrain.js"></script>
+<script src="js/sprites.js"></script>
+<script src="js/fx.js"></script>
+<script src="js/entities.js"></script>
+<script src="js/world.js"></script>
+<script src="js/missions.js"></script>
+<script src="js/game.js"></script>
+</body>
+</html>
