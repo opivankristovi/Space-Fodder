@@ -31,6 +31,13 @@
     <section class="hud-block grow">
       <h3>Squad <span class="muted">kills</span></h3>
       <ul id="hud-squad" class="hud-squad"></ul>
+      <div class="team-ctl">
+        <button id="btn-split" type="button" title="Split marked troopers into a new team">Split <kbd>X</kbd></button>
+        <button id="btn-join" type="button" title="Merge with a team standing next to you">Join <kbd>J</kbd></button>
+        <button id="btn-team" type="button" title="Command the next team">Team <kbd>C</kbd></button>
+        <button id="btn-exit" type="button" title="Get out of the vehicle">Get out <kbd>R</kbd></button>
+      </div>
+      <p class="hud-hint">Click names to mark troopers, then split.</p>
     </section>
     <section class="hud-block map-block">
       <canvas id="hud-mini" width="180" height="140" aria-label="Minimap"></canvas>
@@ -42,6 +49,11 @@
     <canvas id="game"></canvas>
     <div id="toasts" aria-live="polite"></div>
     <div id="touch" hidden>
+      <div class="t-small">
+        <button id="t-team" type="button">Team</button>
+        <button id="t-split" type="button">Split</button>
+        <button id="t-exit" type="button">Out</button>
+      </div>
       <button id="t-pause" type="button">II</button>
       <button id="t-swap" type="button">Swap</button>
       <button id="t-throw" type="button">Bomb</button>
@@ -75,6 +87,10 @@
             <div><dt>Right click / hold, or F</dt><dd>Every trooper fires at the cursor.</dd></div>
             <div><dt>Space, E, middle click, or both buttons</dt><dd>Leader throws a grenade or fires a rocket at the cursor.</dd></div>
             <div><dt>1 / 2, Q or Tab</dt><dd>Pick grenades or rockets.</dd></div>
+            <div><dt>Click names in the squad list, then X</dt><dd>Split the marked troopers into a new team (up to three). No marks splits the team in half.</dd></div>
+            <div><dt>C, or click a team name</dt><dd>Command another team. Teams you are not commanding hold position and shoot back.</dd></div>
+            <div><dt>J</dt><dd>Join the team standing next to you.</dd></div>
+            <div><dt>Click a vehicle</dt><dd>The team walks over and climbs in if there are enough seats. R gets out.</dd></div>
             <div><dt>Esc or P</dt><dd>Pause. M mutes sound.</dd></div>
             <div><dt>Ctrl + click</dt><dd>Fires on one-button trackpads.</dd></div>
             <div><dt>Touch</dt><dd>Tap to move. Fire and Bomb aim at the nearest threat.</dd></div>
@@ -85,6 +101,7 @@
             <li>Troopers <b>cannot shoot while wading</b>. Acid pools burn and lava is a wall.</li>
             <li><b>Fuel canisters</b> explode when shot. Grenades flatten alien flora.</li>
             <li><b>Colonists</b> join the back of your line when a trooper reaches them. Walk them into the beacon.</li>
+            <li><b>Vehicles</b>: the Crawler buggy (4 seats) runs aliens over, the Warden tank (3 seats) fires explosive shells, and the Skimmer (2 seats) hovers over water, acid and lava. Split the squad to fit.</li>
             <li>Survivors are <b>promoted</b> after each win: tougher, faster, more accurate. The dead go on the wall.</li>
           </ul>
         </div>
@@ -181,6 +198,7 @@
 <script src="js/sprites.js"></script>
 <script src="js/fx.js"></script>
 <script src="js/entities.js"></script>
+<script src="js/vehicles.js"></script>
 <script src="js/world.js"></script>
 <script src="js/missions.js"></script>
 <script src="js/game.js"></script>

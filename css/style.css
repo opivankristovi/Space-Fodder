@@ -280,3 +280,35 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 @media (prefers-reduced-motion: reduce) {
   .toast { transition: none; }
 }
+
+/* ---------------------------------------------------------------- teams */
+.hud-squad li[data-id] { cursor: pointer; }
+.hud-squad li[data-id]:hover { background: rgba(255,255,255,0.06); }
+.hud-squad li.marked { outline: 1px dashed #ffffff; outline-offset: -1px; }
+.hud-squad li.leader { border-left-color: var(--team, var(--accent)); }
+.hud-squad li.riding .sq-name { color: var(--muted); font-style: italic; }
+.hud-squad li.team-head {
+  grid-template-columns: 1fr auto;
+  cursor: pointer;
+  margin-top: 4px;
+  border-left: 3px solid var(--team);
+  background: rgba(255,255,255,0.03);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+}
+.hud-squad li.team-head b { color: var(--team); }
+.hud-squad li.team-head.active { background: rgba(255,255,255,0.09); color: var(--text); }
+.hud-squad li.team-head .hp { grid-column: 1 / 3; }
+.team-ctl { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 8px; }
+.team-ctl button {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 4px 6px; background: var(--raised); border: 1px solid var(--line); cursor: pointer; font-size: 12px;
+}
+.team-ctl button:hover:not(:disabled) { border-color: var(--accent); }
+.team-ctl button:disabled { opacity: 0.4; cursor: default; }
+.team-ctl kbd { font: 10px var(--body); color: var(--muted); border: 1px solid var(--line); padding: 0 4px; }
+.hud-hint { margin: 6px 0 0; font-size: 11px; color: var(--muted); }
+.t-small { grid-column: 1 / 3; display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+#touch .t-small button { height: 40px; border-radius: 10px; font-size: 11px; }
