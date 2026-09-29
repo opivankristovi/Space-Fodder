@@ -460,20 +460,27 @@ const Game = {
     const m = this.screenToWorld(x, y);
     const hot = w.aliens.some((a) => dist2(a.x, a.y, m.x, m.y) < (a.r + 6) ** 2) || w.nests.some((n) => dist2(n.x, n.y, m.x, m.y) < n.r * n.r);
     g.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-    const col = hot ? '#ff5a47' : '#ffb13a';
-    g.strokeStyle = 'rgba(0,0,0,0.6)'; g.lineWidth = 3.5;
-    const draw = () => {
-      g.beginPath(); g.arc(x, y, 9, 0, TAU);
-      for (const [a, b] of [[0, 1], [1, 0], [0, -1], [-1, 0]]) { g.moveTo(x + a * 5, y + b * 5); g.lineTo(x + a * 14, y + b * 14); }
-      g.stroke();
+    const col = hot ? '#ff4a3a' : '#ffc14d';
+    // Firing kicks the ticks outward a little each shot cycle.
+    const kick = Input.right ? 2 + Math.sin(performance.now() / 45) * 1.5 : 0;
+    const R = 12, t0 = 8 + kick, t1 = 21 + kick;
+    const shape = () => {
+      g.beginPath();
+      g.arc(x, y, R, 0, TAU);
+      for (const [a, b] of [[0, 1], [1, 0], [0, -1], [-1, 0]]) { g.moveTo(x + a * t0, y + b * t0); g.lineTo(x + a * t1, y + b * t1); }
     };
-    draw();
-    g.strokeStyle = col; g.lineWidth = 1.5;
-    draw();
-    if (Input.right) {
-      g.fillStyle = col;
-      g.beginPath(); g.arc(x, y, 2, 0, TAU); g.fill();
-    }
+    g.lineCap = 'round';
+    // Dark halo so the reticle reads on snow, sand and hive alike.
+    g.strokeStyle = 'rgba(0,0,0,0.85)'; g.lineWidth = 7.5;
+    shape(); g.stroke();
+    g.strokeStyle = col; g.lineWidth = 3.5;
+    shape(); g.stroke();
+    // Centre dot
+    g.fillStyle = 'rgba(0,0,0,0.85)';
+    g.beginPath(); g.arc(x, y, 3.6, 0, TAU); g.fill();
+    g.fillStyle = '#ffffff';
+    g.beginPath(); g.arc(x, y, 2, 0, TAU); g.fill();
+    g.lineCap = 'butt';
   },
 };
 
