@@ -1,0 +1,3 @@
+## 2024-05-24 - Contextual Disabled Tooltips
+**Learning:** In complex game interfaces where buttons can be disabled for multiple reasons (e.g., maximum team count reached, not enough members, being in a vehicle), simple disabled states leave users confused about *why* the action is unavailable.
+**Action:** Always pair `disabled` states on action buttons with dynamic `title` (or tooltip) attributes that explicitly state the unmet condition blocking the action.

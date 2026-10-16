@@ -317,10 +317,30 @@ const Game = {
     const html = rows.join('');
     if (force || html !== this._sqHtml) { $('hud-squad').innerHTML = html; this._sqHtml = html; }
     const T = w.team;
-    $('btn-split').disabled = !T || !!T.vehicle || w.teams.length >= TEAM_DEFS.length || T.members.length < 2;
-    $('btn-join').disabled = !T || w.teams.length < 2;
-    $('btn-exit').disabled = !T || !T.vehicle;
-    $('btn-team').disabled = w.teams.length < 2;
+
+    const btnSplit = $('btn-split');
+    btnSplit.disabled = !T || !!T.vehicle || w.teams.length >= TEAM_DEFS.length || T.members.length < 2;
+    if (btnSplit.disabled) {
+      if (!T) btnSplit.title = "No active team";
+      else if (T.vehicle) btnSplit.title = "Cannot split while in a vehicle";
+      else if (w.teams.length >= TEAM_DEFS.length) btnSplit.title = "Maximum number of teams reached";
+      else btnSplit.title = "Need 2+ troopers to split";
+    } else {
+      btnSplit.title = "Split marked troopers into a new team";
+    }
+
+    const btnJoin = $('btn-join');
+    btnJoin.disabled = !T || w.teams.length < 2;
+    btnJoin.title = btnJoin.disabled ? "No other teams available to join" : "Merge with a team standing next to you";
+
+    const btnExit = $('btn-exit');
+    btnExit.disabled = !T || !T.vehicle;
+    btnExit.title = btnExit.disabled ? "Team is not in a vehicle" : "Get out of the vehicle";
+
+    const btnTeam = $('btn-team');
+    btnTeam.disabled = w.teams.length < 2;
+    btnTeam.title = btnTeam.disabled ? "No other teams to command" : "Command the next team";
+
     $('hud-kills').textContent = w.stats.kills;
     $('hud-reserve').textContent = this.campaign.reserve;
     this.drawMinimap();
