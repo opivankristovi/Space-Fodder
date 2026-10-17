@@ -297,6 +297,8 @@ const Game = {
     $('hud-obj').innerHTML = w.objectiveLines().map((o) => `<li class="${o.done ? 'done' : ''}">${escapeHtml(o.label)}</li>`).join('');
     $('w-grenade').querySelector('b').textContent = w.grenades;
     $('w-rocket').querySelector('b').textContent = w.rockets;
+    $('w-grenade').setAttribute('aria-label', `Grenades, ${w.grenades} remaining`);
+    $('w-rocket').setAttribute('aria-label', `Rockets, ${w.rockets} remaining`);
     $('w-grenade').classList.toggle('active', w.special === 'grenade');
     $('w-rocket').classList.toggle('active', w.special === 'rocket');
     $('w-grenade').setAttribute('aria-pressed', String(w.special === 'grenade'));
