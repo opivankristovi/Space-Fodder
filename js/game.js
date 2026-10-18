@@ -121,18 +121,25 @@ const Game = {
     $('btn-join').addEventListener('click', () => queue('join'));
     $('btn-exit').addEventListener('click', () => queue('exit'));
     $('btn-team').addEventListener('click', () => queue('switchTeam'));
-    $('hud-squad').addEventListener('pointerdown', (e) => {
+    const handleSquadClick = (target) => {
       const w = this.world;
       if (!w) return;
-      const head = e.target.closest('[data-team]');
+      const head = target.closest('[data-team]');
       if (head) return queue('selectTeam', Number(head.dataset.team));
-      const row = e.target.closest('[data-id]');
+      const row = target.closest('[data-id]');
       if (!row) return;
       const t = w.troopers.find((t) => String(t.data.id) === row.dataset.id);
       if (!t) return;
       if (t.team !== w.team) { for (const o of w.troopers) o.marked = false; queue('selectTeam', w.teams.indexOf(t.team)); }
       t.marked = !t.marked;
       this.updateHud(true);
+    };
+    $('hud-squad').addEventListener('pointerdown', (e) => handleSquadClick(e.target));
+    $('hud-squad').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        handleSquadClick(e.target);
+      }
     });
     for (const [id, k] of [['t-team', 'switchTeam'], ['t-split', 'split'], ['t-exit', 'exit']]) {
       $(id).addEventListener('touchstart', (e) => { queue(k); e.preventDefault(); }, { passive: false });
@@ -307,10 +314,10 @@ const Game = {
       const act = T === w.team;
       const v = T.vehicle;
       const detail = v ? `${escapeHtml(v.T.name)}` : `${T.grenades}g · ${T.rockets}r`;
-      rows.push(`<li class="team-head${act ? ' active' : ''}" data-team="${i}" style="--team:${T.color}" title="Command ${T.name} team"><b>${T.name}</b><span>${detail}</span>${v ? bar(v.hp / v.maxHp) : ''}</li>`);
+      rows.push(`<li class="team-head${act ? ' active' : ''}" data-team="${i}" style="--team:${T.color}" title="Command ${T.name} team" tabindex="0" role="button"><b>${T.name}</b><span>${detail}</span>${v ? bar(v.hp / v.maxHp) : ''}</li>`);
       for (const t of T.members) {
         const cls = [t.leader ? 'leader' : '', t.marked ? 'marked' : '', t.inVehicle ? 'riding' : ''].join(' ');
-        rows.push(`<li class="${cls}" data-id="${t.data.id}" style="--team:${T.color}" title="Mark for splitting"><span class="insignia sm" style="--rank:${RANK_COLORS[t.data.rank]}">${rankBars(RANKS[t.data.rank].bars)}</span><span class="sq-name">${escapeHtml(t.data.name)}</span><span class="sq-k">${t.kills}</span>${bar(t.hp / t.maxHp)}</li>`);
+        rows.push(`<li class="${cls}" data-id="${t.data.id}" style="--team:${T.color}" title="Mark for splitting" tabindex="0" role="button" aria-pressed="${t.marked ? 'true' : 'false'}"><span class="insignia sm" style="--rank:${RANK_COLORS[t.data.rank]}">${rankBars(RANKS[t.data.rank].bars)}</span><span class="sq-name">${escapeHtml(t.data.name)}</span><span class="sq-k">${t.kills}</span>${bar(t.hp / t.maxHp)}</li>`);
       }
     });
     for (const t of w.fallen) rows.push(`<li class="dead"><span class="insignia sm" style="--rank:#555">✕</span><span class="sq-name">${escapeHtml(t.data.name)}</span><span class="sq-k">KIA</span></li>`);
