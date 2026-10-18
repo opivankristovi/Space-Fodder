@@ -1,3 +1,6 @@
 ## 2024-05-15 - Prevent Text/Quantity/Shortcut Concatenation in Screen Readers
 **Learning:** When displaying buttons with inner text, quantity counters (e.g., `<b>`), and keyboard shortcuts (e.g., `<kbd>`), screen readers tend to read all text contents sequentially. For example, "Grenades 0 1". This is extremely confusing as it sounds like "Grenades zero one".
 **Action:** Use `aria-hidden="true"` on the interior elements such as `<b>` and `<kbd>` so their content is ignored in the combined text calculation. Use `aria-label` to provide the descriptive, meaningful name including the quantity (e.g., "Grenades, 0 remaining") dynamically, and use `aria-keyshortcuts` on the button itself so the screen reader can natively announce the keyboard shortcut without cluttering the visible text reading.
+## 2024-05-24 - Contextual Disabled Tooltips
+**Learning:** In complex game interfaces where buttons can be disabled for multiple reasons (e.g., maximum team count reached, not enough members, being in a vehicle), simple disabled states leave users confused about *why* the action is unavailable.
+**Action:** Always pair `disabled` states on action buttons with dynamic `title` (or tooltip) attributes that explicitly state the unmet condition blocking the action.
