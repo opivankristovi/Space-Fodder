@@ -4,3 +4,6 @@
 ## 2024-05-24 - Interactive List Accessibility
 **Learning:** Custom interactive list items (like `<li>` elements acting as buttons) completely exclude keyboard-only users if they rely only on `pointerdown` or `click` handlers, preventing critical gameplay functions (e.g., team selection and marking).
 **Action:** Always ensure that dynamically generated custom interactive list items include `tabindex="0"`, `role="button"`, state attributes like `aria-pressed`, and explicitly map `keydown` events (Enter/Space) to the same interaction logic as pointer events.
+## 2024-10-19 - Focus States on Custom Roles
+**Learning:** Custom interactive elements (like `<li>` with `role="button"`) created dynamically often lack the default browser focus outlines that native `<button>`s receive, leaving keyboard users with no visual indication of their current location.
+**Action:** Always pair `role="button"` assignments with explicit `:focus-visible` CSS styling, ensuring the outline offset accounts for the element's container to prevent clipping.

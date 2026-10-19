@@ -348,6 +348,12 @@ const Game = {
     btnTeam.disabled = w.teams.length < 2;
     btnTeam.title = btnTeam.disabled ? "No other teams to command" : "Command the next team";
 
+    if (Input.touch.enabled) {
+      $('t-split').disabled = btnSplit.disabled;
+      $('t-exit').disabled = btnExit.disabled;
+      $('t-team').disabled = btnTeam.disabled;
+    }
+
     $('hud-kills').textContent = w.stats.kills;
     $('hud-reserve').textContent = this.campaign.reserve;
     this.drawMinimap();

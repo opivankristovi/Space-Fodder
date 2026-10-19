@@ -1,0 +1,27 @@
+ INFO  Accepting connections at http://localhost:3000
+ HTTP  10/19/2026 7:07:03 PM ::1 GET /
+ HTTP  10/19/2026 7:07:03 PM ::1 Returned 200 in 333 ms
+ HTTP  10/19/2026 7:07:03 PM ::1 GET /css/style.css
+ HTTP  10/19/2026 7:07:03 PM ::1 Returned 200 in 5 ms
+ HTTP  10/19/2026 7:07:03 PM ::1 GET /js/util.js
+ HTTP  10/19/2026 7:07:03 PM ::1 GET /js/input.js
+ HTTP  10/19/2026 7:07:03 PM ::1 GET /js/audio.js
+ HTTP  10/19/2026 7:07:03 PM ::1 GET /js/terrain.js
+ HTTP  10/19/2026 7:07:03 PM ::1 GET /js/sprites.js
+ HTTP  10/19/2026 7:07:03 PM ::1 Returned 200 in 12 ms
+ HTTP  10/19/2026 7:07:03 PM ::1 Returned 200 in 13 ms
+ HTTP  10/19/2026 7:07:03 PM ::1 GET /js/fx.js
+ HTTP  10/19/2026 7:07:03 PM ::1 Returned 200 in 14 ms
+ HTTP  10/19/2026 7:07:03 PM ::1 Returned 200 in 15 ms
+ HTTP  10/19/2026 7:07:03 PM ::1 Returned 200 in 17 ms
+ HTTP  10/19/2026 7:07:03 PM ::1 Returned 200 in 15 ms
+ HTTP  10/19/2026 7:07:04 PM ::1 GET /js/entities.js
+ HTTP  10/19/2026 7:07:04 PM ::1 GET /js/vehicles.js
+ HTTP  10/19/2026 7:07:04 PM ::1 GET /js/world.js
+ HTTP  10/19/2026 7:07:04 PM ::1 GET /js/missions.js
+ HTTP  10/19/2026 7:07:04 PM ::1 GET /js/game.js
+ HTTP  10/19/2026 7:07:04 PM ::1 Returned 200 in 10 ms
+ HTTP  10/19/2026 7:07:04 PM ::1 Returned 200 in 10 ms
+ HTTP  10/19/2026 7:07:04 PM ::1 Returned 200 in 11 ms
+ HTTP  10/19/2026 7:07:04 PM ::1 Returned 200 in 11 ms
+ HTTP  10/19/2026 7:07:04 PM ::1 Returned 200 in 13 ms
