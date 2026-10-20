@@ -7,3 +7,6 @@
 ## 2024-10-19 - Focus States on Custom Roles
 **Learning:** Custom interactive elements (like `<li>` with `role="button"`) created dynamically often lack the default browser focus outlines that native `<button>`s receive, leaving keyboard users with no visual indication of their current location.
 **Action:** Always pair `role="button"` assignments with explicit `:focus-visible` CSS styling, ensuring the outline offset accounts for the element's container to prevent clipping.
+## 2024-11-20 - Custom List Item Content Gibberish
+**Learning:** Concatenating visual elements like acronyms, icons, and raw numbers in custom list items (like the squad UI) creates inaccessible, contextless gibberish when read by a screen reader (e.g., reading out "Alpha team 3g 4r" or just numbers back to back).
+**Action:** Always provide a clear, human-readable `aria-label` on the container element (e.g., `aria-label="Alpha team, 3 grenades, 4 rockets"`) and hide the visual abbreviations/icons from screen readers using `aria-hidden="true"`.

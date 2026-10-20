@@ -309,18 +309,25 @@ const Game = {
     $('w-grenade').setAttribute('aria-pressed', String(w.special === 'grenade'));
     $('w-rocket').setAttribute('aria-pressed', String(w.special === 'rocket'));
     const rows = [];
-    const bar = (f) => `<span class="hp"><i style="width:${(clamp(f, 0, 1) * 100).toFixed(0)}%;background:${f > 0.4 ? 'var(--good)' : 'var(--bad)'}"></i></span>`;
+    const bar = (f) => `<span class="hp" aria-hidden="true"><i style="width:${(clamp(f, 0, 1) * 100).toFixed(0)}%;background:${f > 0.4 ? 'var(--good)' : 'var(--bad)'}"></i></span>`;
     w.teams.forEach((T, i) => {
       const act = T === w.team;
       const v = T.vehicle;
       const detail = v ? `${escapeHtml(v.T.name)}` : `${T.grenades}g · ${T.rockets}r`;
-      rows.push(`<li class="team-head${act ? ' active' : ''}" data-team="${i}" style="--team:${T.color}" title="Command ${T.name} team" tabindex="0" role="button"><b>${T.name}</b><span>${detail}</span>${v ? bar(v.hp / v.maxHp) : ''}</li>`);
+      const hpLabel = v ? `, Health ${Math.round((v.hp / v.maxHp) * 100)}%` : '';
+      const ariaDetail = v ? `, in ${escapeHtml(v.T.name)}` : `, ${T.grenades} grenades, ${T.rockets} rockets`;
+      const ariaLabel = `${T.name} team${ariaDetail}${hpLabel}`;
+
+      rows.push(`<li class="team-head${act ? ' active' : ''}" data-team="${i}" style="--team:${T.color}" title="Command ${T.name} team" tabindex="0" role="button" aria-label="${escapeHtml(ariaLabel)}"><b aria-hidden="true">${T.name}</b><span aria-hidden="true">${detail}</span>${v ? bar(v.hp / v.maxHp) : ''}</li>`);
       for (const t of T.members) {
         const cls = [t.leader ? 'leader' : '', t.marked ? 'marked' : '', t.inVehicle ? 'riding' : ''].join(' ');
-        rows.push(`<li class="${cls}" data-id="${t.data.id}" style="--team:${T.color}" title="Mark for splitting" tabindex="0" role="button" aria-pressed="${t.marked ? 'true' : 'false'}"><span class="insignia sm" style="--rank:${RANK_COLORS[t.data.rank]}">${rankBars(RANKS[t.data.rank].bars)}</span><span class="sq-name">${escapeHtml(t.data.name)}</span><span class="sq-k">${t.kills}</span>${bar(t.hp / t.maxHp)}</li>`);
+        const tRank = RANKS[t.data.rank].name;
+        const tHp = Math.round((t.hp / t.maxHp) * 100);
+        const tLabel = `${tRank} ${t.data.name}, ${t.kills} kills, Health ${tHp}%`;
+        rows.push(`<li class="${cls}" data-id="${t.data.id}" style="--team:${T.color}" title="Mark for splitting" tabindex="0" role="button" aria-pressed="${t.marked ? 'true' : 'false'}" aria-label="${escapeHtml(tLabel)}"><span aria-hidden="true" class="insignia sm" style="--rank:${RANK_COLORS[t.data.rank]}">${rankBars(RANKS[t.data.rank].bars)}</span><span aria-hidden="true" class="sq-name">${escapeHtml(t.data.name)}</span><span aria-hidden="true" class="sq-k">${t.kills}</span>${bar(t.hp / t.maxHp)}</li>`);
       }
     });
-    for (const t of w.fallen) rows.push(`<li class="dead"><span class="insignia sm" style="--rank:#555">✕</span><span class="sq-name">${escapeHtml(t.data.name)}</span><span class="sq-k">KIA</span></li>`);
+    for (const t of w.fallen) rows.push(`<li class="dead" aria-label="${escapeHtml(t.data.name)}, Killed in action"><span aria-hidden="true" class="insignia sm" style="--rank:#555">✕</span><span aria-hidden="true" class="sq-name">${escapeHtml(t.data.name)}</span><span aria-hidden="true" class="sq-k">KIA</span></li>`);
     const html = rows.join('');
     if (force || html !== this._sqHtml) { $('hud-squad').innerHTML = html; this._sqHtml = html; }
     const T = w.team;
