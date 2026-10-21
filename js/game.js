@@ -308,6 +308,8 @@ const Game = {
     $('w-rocket').classList.toggle('active', w.special === 'rocket');
     $('w-grenade').setAttribute('aria-pressed', String(w.special === 'grenade'));
     $('w-rocket').setAttribute('aria-pressed', String(w.special === 'rocket'));
+    $('w-grenade').setAttribute('aria-label', `Grenades, ${w.grenades} available, shortcut 1`);
+    $('w-rocket').setAttribute('aria-label', `Rockets, ${w.rockets} available, shortcut 2`);
     const rows = [];
     const bar = (f) => `<span class="hp"><i style="width:${(clamp(f, 0, 1) * 100).toFixed(0)}%;background:${f > 0.4 ? 'var(--good)' : 'var(--bad)'}"></i></span>`;
     w.teams.forEach((T, i) => {

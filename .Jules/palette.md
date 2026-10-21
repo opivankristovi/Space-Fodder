@@ -7,3 +7,6 @@
 ## 2024-10-19 - Focus States on Custom Roles
 **Learning:** Custom interactive elements (like `<li>` with `role="button"`) created dynamically often lack the default browser focus outlines that native `<button>`s receive, leaving keyboard users with no visual indication of their current location.
 **Action:** Always pair `role="button"` assignments with explicit `:focus-visible` CSS styling, ensuring the outline offset accounts for the element's container to prevent clipping.
+## 2026-10-21 - Label in Name and Complex Buttons
+**Learning:** Overriding `aria-label` completely replaces the visual text. If the `aria-label` doesn't include the visible text (e.g., button text "Bomb", `aria-label="Throw grenade"`), it violates WCAG 2.5.3 (Label in Name) and breaks voice dictation. Also, complex nested icons/spans inside buttons can cause disjointed screen reader announcements.
+**Action:** For simple buttons, if adding context, use `aria-describedby` or a visually hidden span instead of overriding `aria-label`. For complex HUD buttons, if using `aria-label` to group information, ensure it explicitly includes the visual text (e.g. `aria-label="Grenades, 4 available, shortcut 1"` on a button displaying "Grenades 4").
