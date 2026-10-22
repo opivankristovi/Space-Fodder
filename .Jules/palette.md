@@ -7,3 +7,6 @@
 ## 2024-10-19 - Focus States on Custom Roles
 **Learning:** Custom interactive elements (like `<li>` with `role="button"`) created dynamically often lack the default browser focus outlines that native `<button>`s receive, leaving keyboard users with no visual indication of their current location.
 **Action:** Always pair `role="button"` assignments with explicit `:focus-visible` CSS styling, ensuring the outline offset accounts for the element's container to prevent clipping.
+## 2024-10-25 - Inline Double-Click Confirmations
+**Learning:** For high-stakes, destructive actions (like erasing campaigns or aborting a mission), instantly triggering the action is dangerous, while full modal dialogs can feel disruptive to game flow.
+**Action:** Use an inline, time-bound double-click confirmation pattern where the first click changes the button text to a prompt ("Erase progress? Click again", "Fail mission? Click again") and sets a data attribute (`data-confirm`). A timeout should revert this state after ~3.5 seconds.
