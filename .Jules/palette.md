@@ -10,3 +10,6 @@
 ## 2024-11-20 - Custom List Item Content Gibberish
 **Learning:** Concatenating visual elements like acronyms, icons, and raw numbers in custom list items (like the squad UI) creates inaccessible, contextless gibberish when read by a screen reader (e.g., reading out "Alpha team 3g 4r" or just numbers back to back).
 **Action:** Always provide a clear, human-readable `aria-label` on the container element (e.g., `aria-label="Alpha team, 3 grenades, 4 rockets"`) and hide the visual abbreviations/icons from screen readers using `aria-hidden="true"`.
+## 2025-01-16 - Destructive Action Inline Confirmation
+**Learning:** High-stakes, irreversible destructive actions (like permanently ending a mission and recording casualties) that are triggered on a single click lead to severe user frustration through accidental clicks, especially in high-tension game moments when navigating menus quickly.
+**Action:** Consistently apply a lightweight, inline double-click confirmation pattern (changing button text to "Are you sure? Click again" with a short timeout) for all destructive actions to prevent accidental data loss without requiring heavy modal dialogs.

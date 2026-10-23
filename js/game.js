@@ -112,7 +112,16 @@ const Game = {
     click('btn-debrief-next', () => this.afterDebrief());
     click('btn-debrief-memorial', () => this.showMemorial('debrief'));
     click('btn-resume', () => this.showScreen('playing'));
-    click('btn-abort', () => this.endMission({ success: false, reason: 'Mission aborted.' }));
+    click('btn-abort', () => {
+      const btn = $('btn-abort');
+      if (!btn.dataset.confirm) {
+        btn.dataset.confirm = '1';
+        btn.textContent = 'Abort mission? Click again';
+        setTimeout(() => { delete btn.dataset.confirm; btn.textContent = 'Abort mission'; }, 3500);
+        return;
+      }
+      this.endMission({ success: false, reason: 'Mission aborted.' });
+    });
     click('btn-over-new', () => { this.campaign = this.freshCampaign(); this.save(); this.showBriefing(); });
     click('btn-win-title', () => this.showScreen('title'));
     click('btn-mute', () => { Sfx.setMuted(!Sfx.muted); this.updateMute(); });
