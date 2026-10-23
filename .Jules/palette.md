@@ -10,3 +10,6 @@
 ## 2026-10-21 - Label in Name and Complex Buttons
 **Learning:** Overriding `aria-label` completely replaces the visual text. If the `aria-label` doesn't include the visible text (e.g., button text "Bomb", `aria-label="Throw grenade"`), it violates WCAG 2.5.3 (Label in Name) and breaks voice dictation. Also, complex nested icons/spans inside buttons can cause disjointed screen reader announcements.
 **Action:** For simple buttons, if adding context, use `aria-describedby` or a visually hidden span instead of overriding `aria-label`. For complex HUD buttons, if using `aria-label` to group information, ensure it explicitly includes the visual text (e.g. `aria-label="Grenades, 4 available, shortcut 1"` on a button displaying "Grenades 4").
+## 2024-11-20 - Custom List Item Content Gibberish
+**Learning:** Concatenating visual elements like acronyms, icons, and raw numbers in custom list items (like the squad UI) creates inaccessible, contextless gibberish when read by a screen reader (e.g., reading out "Alpha team 3g 4r" or just numbers back to back).
+**Action:** Always provide a clear, human-readable `aria-label` on the container element (e.g., `aria-label="Alpha team, 3 grenades, 4 rockets"`) and hide the visual abbreviations/icons from screen readers using `aria-hidden="true"`.
