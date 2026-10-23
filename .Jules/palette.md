@@ -10,3 +10,6 @@
 ## 2024-10-25 - Inline Double-Click Confirmations
 **Learning:** For high-stakes, destructive actions (like erasing campaigns or aborting a mission), instantly triggering the action is dangerous, while full modal dialogs can feel disruptive to game flow.
 **Action:** Use an inline, time-bound double-click confirmation pattern where the first click changes the button text to a prompt ("Erase progress? Click again", "Fail mission? Click again") and sets a data attribute (`data-confirm`). A timeout should revert this state after ~3.5 seconds.
+## 2024-11-20 - Custom List Item Content Gibberish
+**Learning:** Concatenating visual elements like acronyms, icons, and raw numbers in custom list items (like the squad UI) creates inaccessible, contextless gibberish when read by a screen reader (e.g., reading out "Alpha team 3g 4r" or just numbers back to back).
+**Action:** Always provide a clear, human-readable `aria-label` on the container element (e.g., `aria-label="Alpha team, 3 grenades, 4 rockets"`) and hide the visual abbreviations/icons from screen readers using `aria-hidden="true"`.

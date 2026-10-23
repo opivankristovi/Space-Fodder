@@ -24,18 +24,18 @@
     <section class="hud-block">
       <h3>Explosives</h3>
       <div class="weapons">
-        <button id="w-grenade" class="weapon" type="button" aria-pressed="true"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="12" r="6"/><rect x="8" y="3" width="4" height="4"/></svg><span>Grenades</span><b>0</b><kbd>1</kbd></button>
-        <button id="w-rocket" class="weapon" type="button" aria-pressed="false"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 15 L13 5 L17 3 L15 7 L5 17 Z"/><path d="M3 12 L2 18 L8 17 Z"/></svg><span>Rockets</span><b>0</b><kbd>2</kbd></button>
+        <button id="w-grenade" class="weapon" type="button" aria-pressed="true" aria-keyshortcuts="1"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="12" r="6"/><rect x="8" y="3" width="4" height="4"/></svg><span>Grenades</span><b>0</b><kbd aria-hidden="true">1</kbd></button>
+        <button id="w-rocket" class="weapon" type="button" aria-pressed="false" aria-keyshortcuts="2"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 15 L13 5 L17 3 L15 7 L5 17 Z"/><path d="M3 12 L2 18 L8 17 Z"/></svg><span>Rockets</span><b>0</b><kbd aria-hidden="true">2</kbd></button>
       </div>
     </section>
     <section class="hud-block grow">
-      <h3>Squad <span class="muted">kills</span></h3>
+      <h3>Squad <span class="muted" aria-hidden="true">kills</span></h3>
       <ul id="hud-squad" class="hud-squad"></ul>
       <div class="team-ctl">
-        <button id="btn-split" type="button" title="Split marked troopers into a new team">Split <kbd>X</kbd></button>
-        <button id="btn-join" type="button" title="Merge with a team standing next to you">Join <kbd>J</kbd></button>
-        <button id="btn-team" type="button" title="Command the next team">Team <kbd>C</kbd></button>
-        <button id="btn-exit" type="button" title="Get out of the vehicle">Get out <kbd>R</kbd></button>
+        <button id="btn-split" type="button" title="Split marked troopers into a new team" aria-keyshortcuts="X">Split <kbd aria-hidden="true">X</kbd></button>
+        <button id="btn-join" type="button" title="Merge with a team standing next to you" aria-keyshortcuts="J">Join <kbd aria-hidden="true">J</kbd></button>
+        <button id="btn-team" type="button" title="Command the next team" aria-keyshortcuts="C">Team <kbd aria-hidden="true">C</kbd></button>
+        <button id="btn-exit" type="button" title="Get out of the vehicle" aria-keyshortcuts="R">Get out <kbd aria-hidden="true">R</kbd></button>
       </div>
       <p class="hud-hint">Click names to mark troopers, then split.</p>
     </section>
