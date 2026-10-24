@@ -310,6 +310,9 @@ const Game = {
   updateHud(force) {
     const w = this.world;
     if (!w) return;
+    const activeEl = document.activeElement;
+    const activeId = activeEl && activeEl.dataset ? activeEl.dataset.id : null;
+    const activeTeam = activeEl && activeEl.dataset ? activeEl.dataset.team : null;
     $('hud-obj').innerHTML = w.objectiveLines().map((o) => `<li class="${o.done ? 'done' : ''}">${escapeHtml(o.label)}</li>`).join('');
     $('w-grenade').querySelector('b').textContent = w.grenades;
     $('w-rocket').querySelector('b').textContent = w.rockets;
@@ -338,7 +341,17 @@ const Game = {
     });
     for (const t of w.fallen) rows.push(`<li class="dead" aria-label="${escapeHtml(t.data.name)}, Killed in action"><span aria-hidden="true" class="insignia sm" style="--rank:#555">✕</span><span aria-hidden="true" class="sq-name">${escapeHtml(t.data.name)}</span><span aria-hidden="true" class="sq-k">KIA</span></li>`);
     const html = rows.join('');
-    if (force || html !== this._sqHtml) { $('hud-squad').innerHTML = html; this._sqHtml = html; }
+    if (force || html !== this._sqHtml) {
+      $('hud-squad').innerHTML = html;
+      this._sqHtml = html;
+      if (activeId) {
+        const el = $('hud-squad').querySelector(`[data-id="${activeId}"]`);
+        if (el) el.focus({ preventScroll: true });
+      } else if (activeTeam) {
+        const el = $('hud-squad').querySelector(`[data-team="${activeTeam}"]`);
+        if (el) el.focus({ preventScroll: true });
+      }
+    }
     const T = w.team;
 
     const btnSplit = $('btn-split');

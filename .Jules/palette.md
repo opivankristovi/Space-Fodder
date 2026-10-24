@@ -13,3 +13,6 @@
 ## 2025-01-16 - Destructive Action Inline Confirmation
 **Learning:** High-stakes, irreversible destructive actions (like permanently ending a mission and recording casualties) that are triggered on a single click lead to severe user frustration through accidental clicks, especially in high-tension game moments when navigating menus quickly.
 **Action:** Consistently apply a lightweight, inline double-click confirmation pattern (changing button text to "Are you sure? Click again" with a short timeout) for all destructive actions to prevent accidental data loss without requiring heavy modal dialogs.
+## 2024-10-24 - DOM Updates Destroying Keyboard Focus
+**Learning:** Reactively updating UI sections by replacing `innerHTML` (such as list items in the squad HUD) completely destroys the keyboard focus of the active element within that section. This abruptly resets focus back to the `<body>` element, completely breaking the experience for keyboard and screen reader users who were interacting with the list.
+**Action:** Always track the identifier (like `data-id` or `data-team`) of `document.activeElement` before a reactive `innerHTML` update, and explicitly restore focus using `.focus({ preventScroll: true })` on the newly created equivalent element immediately after the update.
